@@ -2,6 +2,8 @@
 # Pre-deploy: Build container (local Docker if available, ACR cloud build as fallback)
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/modules/HookLogging.ps1"
+Start-HookLog -HookName "predeploy" -EnvironmentName $env:AZURE_ENV_NAME
 
 Write-Host "Pre-Deploy: Building Container Image" -ForegroundColor Cyan
 
@@ -52,11 +54,41 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Docker push failed" }
     } else {
         Write-Host "Using ACR cloud build (3-5 min)..." -ForegroundColor Yellow
-        az acr build --registry $acrName --image "web:$imageTag" `
+        # Use --no-logs to avoid Azure CLI encoding issues on Windows with unicode characters (checkmarks)
+        $buildResult = az acr build --registry $acrName --image "web:$imageTag" `
             --build-arg ENTRA_SPA_CLIENT_ID=$clientId `
             --build-arg ENTRA_TENANT_ID=$tenantId `
-            --file deployment/docker/frontend.Dockerfile . 2>&1 | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw "ACR build failed" }
+            --file deployment/docker/frontend.Dockerfile . `
+            --no-logs --only-show-errors --output json 2>&1
+        
+        if ($LASTEXITCODE -ne 0) { 
+            Write-Host "Build output: $buildResult" -ForegroundColor Red
+            throw "ACR build failed" 
+        }
+        
+        # Check build status from JSON result.
+        # NOTE: Azure CLI can sometimes emit warnings or non-JSON text even when --output json is requested.
+        # Avoid writing scary terminating ConvertFrom-Json errors into the transcript by parsing only when it looks like JSON.
+        $trimmed = ($buildResult | Out-String).Trim()
+        if ($trimmed.StartsWith('{') -or $trimmed.StartsWith('[')) {
+            try {
+                $buildJson = $trimmed | ConvertFrom-Json -ErrorAction Stop
+                if ($buildJson.status -and $buildJson.status -ne "Succeeded") {
+                    Write-Host "Build status: $($buildJson.status)" -ForegroundColor Red
+                    throw "ACR build failed with status: $($buildJson.status)"
+                }
+                if ($buildJson.runId) {
+                    Write-Host "Build completed (Run ID: $($buildJson.runId))" -ForegroundColor Green
+                } else {
+                    Write-Host "Build completed" -ForegroundColor Green
+                }
+            } catch {
+                # If we can't parse JSON but LASTEXITCODE was 0, assume success.
+                Write-Host "Build completed" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "Build completed" -ForegroundColor Yellow
+        }
     }
     Write-Host "[OK] Image built: $imageName" -ForegroundColor Green
     
@@ -77,3 +109,8 @@ try {
 } finally {
     Pop-Location
 }
+
+if ($script:HookLogFile) {
+    Write-Host "[LOG] Log file: $script:HookLogFile" -ForegroundColor DarkGray
+}
+Stop-HookLog

@@ -151,6 +151,17 @@ if (!response.ok) throw new Error(`API error: ${response.status}`);
 npm install --legacy-peer-deps
 ```
 
+**IMPORTANT**: `--legacy-peer-deps` skips automatic peer dependency installation. If a package requires peer dependencies, you must add them explicitly to `package.json`.
+
+**Example**: `@fluentui-copilot/react-copilot` → `@lexical/react` → `@lexical/yjs` requires `yjs` as a peer dependency. Since peer deps aren't auto-installed, `yjs` must be in `package.json` directly.
+
+**Before committing package changes**, always verify with:
+```bash
+npm ci  # Fails if lock file is out of sync with package.json
+```
+
+If `npm ci` fails with "Missing: <package> from lock file", add the missing package explicitly to `package.json` and run `npm install --legacy-peer-deps` again.
+
 ## Common Mistakes
 
 - ❌ Accessing `import.meta.env.*` in functions

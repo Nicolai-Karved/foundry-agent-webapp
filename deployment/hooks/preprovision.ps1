@@ -3,6 +3,8 @@
 
 $ErrorActionPreference = "Stop"
 $env:PYTHONIOENCODING = "utf-8"
+. "$PSScriptRoot/modules/HookLogging.ps1"
+Start-HookLog -HookName "preprovision" -EnvironmentName $env:AZURE_ENV_NAME
 
 Write-Host "Pre-Provision: Entra ID & AI Foundry Setup" -ForegroundColor Cyan
 
@@ -61,6 +63,9 @@ Write-Host "Discovering AI Foundry resources..." -ForegroundColor Cyan
 $existingEndpoint = (azd env get-value AI_AGENT_ENDPOINT 2>&1) | Where-Object { $_ -notmatch 'ERROR' } | Select-Object -First 1
 
 if ([string]::IsNullOrWhiteSpace($existingEndpoint)) {
+    # Check for pre-configured resource selection (for non-interactive mode)
+    $presetResourceName = (azd env get-value AI_FOUNDRY_RESOURCE_NAME 2>&1) | Where-Object { $_ -notmatch 'ERROR' } | Select-Object -First 1
+    
     # Auto-discover
     $resources = az cognitiveservices account list --query "[?kind=='AIServices']" | ConvertFrom-Json
     if (-not $resources -or $resources.Count -eq 0) {
@@ -69,15 +74,32 @@ if ([string]::IsNullOrWhiteSpace($existingEndpoint)) {
     }
     
     $selected = $resources[0]
-    if ($resources.Count -gt 1) {
+    
+    # If preset resource name, find it
+    if (-not [string]::IsNullOrWhiteSpace($presetResourceName)) {
+        $match = $resources | Where-Object { $_.name -eq $presetResourceName }
+        if ($match) {
+            $selected = $match
+            Write-Host "[OK] Using pre-configured resource: $presetResourceName" -ForegroundColor Green
+        } else {
+            Write-Host "[WARN] Configured resource '$presetResourceName' not found, using first available" -ForegroundColor Yellow
+        }
+    } elseif ($resources.Count -gt 1) {
         Write-Host "Found $($resources.Count) AI Foundry resources:" -ForegroundColor Cyan
         for ($i = 0; $i -lt $resources.Count; $i++) {
             Write-Host "  [$($i+1)] $($resources[$i].name) ($($resources[$i].resourceGroup))" -ForegroundColor White
         }
-        $sel = Read-Host "Select (1-$($resources.Count))"
-        $selection = 0
-        if ([int]::TryParse($sel, [ref]$selection) -and $selection -ge 1 -and $selection -le $resources.Count) {
-            $selected = $resources[$selection - 1]
+        
+        # Check if running in interactive mode
+        if ([Environment]::UserInteractive -and [Console]::IsInputRedirected -eq $false) {
+            $sel = Read-Host "Select (1-$($resources.Count))"
+            $selection = 0
+            if ([int]::TryParse($sel, [ref]$selection) -and $selection -ge 1 -and $selection -le $resources.Count) {
+                $selected = $resources[$selection - 1]
+            }
+        } else {
+            Write-Host "[WARN] Non-interactive mode: using first resource. Set AI_FOUNDRY_RESOURCE_NAME to specify." -ForegroundColor Yellow
+            Write-Host "       Run: azd env set AI_FOUNDRY_RESOURCE_NAME <name>" -ForegroundColor Yellow
         }
     }
     Write-Host "[OK] Using: $($selected.name)" -ForegroundColor Green
@@ -143,3 +165,8 @@ AI_AGENT_ID=$aiAgentId
 
 Write-Host "[OK] Local dev config created" -ForegroundColor Green
 Write-Host "[OK] Pre-provision complete" -ForegroundColor Green
+
+if ($script:HookLogFile) {
+    Write-Host "[LOG] Log file: $script:HookLogFile" -ForegroundColor DarkGray
+}
+Stop-HookLog

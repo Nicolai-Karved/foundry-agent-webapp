@@ -2,6 +2,8 @@
 # Post-down: Cleanup Entra app, role assignments, and local config after azd down
 
 $ErrorActionPreference = "Continue"
+. "$PSScriptRoot/modules/HookLogging.ps1"
+Start-HookLog -HookName "postdown" -EnvironmentName $env:AZURE_ENV_NAME
 
 Write-Host "Post-Down Cleanup" -ForegroundColor Cyan
 
@@ -64,3 +66,8 @@ if ($env:CLEAN_DOCKER_IMAGES -eq "true" -and (Get-Command docker -EA SilentlyCon
 }
 
 Write-Host "[OK] Cleanup complete. Run 'azd up' to redeploy." -ForegroundColor Green
+
+if ($script:HookLogFile) {
+    Write-Host "[LOG] Log file: $script:HookLogFile" -ForegroundColor DarkGray
+}
+Stop-HookLog

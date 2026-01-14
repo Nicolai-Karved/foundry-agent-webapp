@@ -2,6 +2,8 @@
 # Post-provision: Updates Entra app redirect URIs and assigns RBAC to AI Foundry resource
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/modules/HookLogging.ps1"
+Start-HookLog -HookName "postprovision" -EnvironmentName $env:AZURE_ENV_NAME
 
 Write-Host "Post-Provision: Configure Entra App & RBAC" -ForegroundColor Cyan
 
@@ -88,3 +90,8 @@ if ($webIdentityPrincipalId -and $aiFoundryResourceGroup -and $aiFoundryResource
 try { Start-Process $containerAppUrl } catch { }
 
 Write-Host "[OK] Post-provision complete. URL: $containerAppUrl" -ForegroundColor Green
+
+if ($script:HookLogFile) {
+    Write-Host "[LOG] Log file: $script:HookLogFile" -ForegroundColor DarkGray
+}
+Stop-HookLog

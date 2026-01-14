@@ -11,6 +11,10 @@
 | **Teardown** | `azd down` | (resources deleted) → postdown | 2-3 min |
 | **Reprovision** | `azd provision` | preprovision → provision → postprovision | 2-3 min |
 
+## Logging
+
+All hooks now start a PowerShell transcript automatically and write logs to `.azure/<env>/logs/` with timestamped filenames (one per hook run). The transcript captures the same console output shown during `azd` execution for post-run troubleshooting.
+
 ## Hook Details
 
 | Hook | Purpose | Key Actions | Outputs |

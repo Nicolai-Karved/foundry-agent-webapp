@@ -189,13 +189,11 @@ azd deploy  # 3-5 minutes
 
 ### Known Limitations
 
-This application uses **Azure.AI.Projects SDK v1.2.0-beta.5**, which has some limitations compared to the Azure AI Foundry Playground experience:
+- **Office Documents**: DOCX, PPTX, and XLSX files are not supported for upload. Use PDF, images, or plain text files instead.
+- **Beta SDK**: This application uses Azure.AI.Projects SDK v1.2.0-beta.5. Some features may change before general availability.
+- **npm Peer Dependencies**: React 19 requires `--legacy-peer-deps` which skips automatic peer dependency installation. If adding packages that have peer dependencies (like `yjs` for `@lexical/yjs`), you must add them explicitly to `package.json`. Run `npm ci` locally to verify before committing.
 
-- **File Upload Types**: Currently supports image files only (PNG, JPEG, GIF, WebP). The Foundry Playground supports additional formats like PDF. Support for more file types will be added when the SDK reaches stable release.
-- **MCP Tool Approval**: The SDK's `McpToolCallApprovalRequestItem` type currently only exposes the `Id` property. Tool name, server label, and arguments are not accessible in v1.2.0-beta.5, so the approval UI displays placeholder text ("unknown"). This will be fixed when the SDK is updated with complete property access.
-- **Beta SDK**: As a preview SDK, some features may change before general availability.
-
-For tracking SDK updates and feature parity, see issue [#14](https://github.com/microsoft-foundry/foundry-agent-webapp/issues/14).
+For tracking feature updates, see issue [#14](https://github.com/microsoft-foundry/foundry-agent-webapp/issues/14).
 
 
 
