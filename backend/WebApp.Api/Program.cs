@@ -39,7 +39,7 @@ builder.Services.AddProblemDetails();
 
 // Configure CORS for local development and production
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? new[] { "http://localhost:8080" };
+    ?? new[] { "http://localhost:8089" };
 
 builder.Services.AddCors(options =>
 {

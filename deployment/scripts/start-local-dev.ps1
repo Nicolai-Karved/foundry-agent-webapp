@@ -39,7 +39,7 @@ if (-not (Test-Path $envLocal)) {
 Write-Host "[OK] Configuration validated" -ForegroundColor Green
 
 # Kill existing processes on our ports
-foreach ($port in @(8080, 5173)) {
+foreach ($port in @(8089, 5173)) {
     if ($IsWindows) {
         $processIds = netstat -ano | Select-String ":$port\s.*LISTENING" | ForEach-Object {
             if ($_ -match '\s(\d+)\s*$') { [int]$Matches[1] }
@@ -74,4 +74,4 @@ if (-not $SkipBrowser) {
 
 Write-Host "`n[OK] Dev servers started" -ForegroundColor Green
 Write-Host "  Frontend: http://localhost:5173" -ForegroundColor Cyan
-Write-Host "  Backend:  http://localhost:8080" -ForegroundColor Cyan
+Write-Host "  Backend:  http://localhost:8089" -ForegroundColor Cyan

@@ -110,6 +110,55 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     }
 
+    case 'CHAT_SET_MESSAGE_CONTENT': {
+      const messageIndex = state.chat.messages.findIndex(
+        msg => msg.id === action.messageId
+      );
+
+      if (messageIndex === -1) {
+        return state;
+      }
+
+      const updatedMessages = [...state.chat.messages];
+      updatedMessages[messageIndex] = {
+        ...updatedMessages[messageIndex],
+        content: action.content,
+      };
+
+      return {
+        ...state,
+        chat: {
+          ...state.chat,
+          messages: updatedMessages,
+        },
+      };
+    }
+
+    case 'CHAT_SET_MESSAGE_STRUCTURED': {
+      const messageIndex = state.chat.messages.findIndex(
+        msg => msg.id === action.messageId
+      );
+
+      if (messageIndex === -1) {
+        return state;
+      }
+
+      const updatedMessages = [...state.chat.messages];
+      updatedMessages[messageIndex] = {
+        ...updatedMessages[messageIndex],
+        content: action.content,
+        structured: action.structured,
+      };
+
+      return {
+        ...state,
+        chat: {
+          ...state.chat,
+          messages: updatedMessages,
+        },
+      };
+    }
+
     case 'CHAT_STREAM_ANNOTATIONS': {
       // Add annotations to the streaming message
       const messageIndex = state.chat.messages.findIndex(

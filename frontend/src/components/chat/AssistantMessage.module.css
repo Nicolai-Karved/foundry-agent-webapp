@@ -51,6 +51,41 @@
   }
 }
 
+.retrievingRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 14px;
+  color: var(--colorNeutralForeground2);
+}
+
+.retrievingText {
+  font-weight: 500;
+}
+
+.retrievingDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.retrievingDots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--colorNeutralForeground3);
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.retrievingDots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.retrievingDots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
 /* Timestamp styling */
 .timestamp {
   font-size: 12px;

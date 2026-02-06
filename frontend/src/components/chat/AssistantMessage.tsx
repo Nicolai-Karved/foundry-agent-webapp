@@ -28,6 +28,7 @@ function AssistantMessageComponent({
   
   // Show custom loading indicator when streaming with no content
   const showLoadingDots = isStreaming && !message.content;
+  const showRetrieving = isStreaming && message.content.trim() === 'Retrieving response...';
   const hasAnnotations = message.annotations && message.annotations.length > 0;
   
   // Parse content with citations for consistent numbering between inline and footnotes
@@ -141,6 +142,7 @@ function AssistantMessageComponent({
   const citations = indexedCitations.map(({ index, annotation, count }) => 
     renderCitation(annotation, index, count)
   );
+
   
   return (
     <CopilotMessage
@@ -174,6 +176,15 @@ function AssistantMessageComponent({
           <span></span>
           <span></span>
           <span></span>
+        </div>
+      ) : showRetrieving ? (
+        <div className={styles.retrievingRow}>
+          <span className={styles.retrievingText}>Retrieving response</span>
+          <span className={styles.retrievingDots}>
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
         </div>
       ) : (
         <Suspense fallback={<Spinner size="small" />}>

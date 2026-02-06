@@ -6,6 +6,7 @@ export interface IChatItem {
   attachments?: IFileAttachment[]; // File attachments
   annotations?: IAnnotation[]; // Citations/references from AI agent
   mcpApproval?: IMcpApprovalRequest; // MCP tool approval request
+  structured?: IStructuredResponse; // Parsed structured response data
   more?: {
     time?: string; // ISO timestamp
     usage?: IUsageInfo; // Usage info from backend
@@ -31,6 +32,16 @@ export interface IFileAttachment {
   fileName: string;
   fileSizeBytes: number;
   dataUri?: string; // Base64 data URI for inline image preview
+}
+
+export type StructuredTask = Record<string, unknown>;
+
+export interface IStructuredResponse {
+  response: string;
+  tasks: StructuredTask[];
+  documentName?: string;
+  documentId?: string;
+  raw?: Record<string, unknown>;
 }
 
 /** Citation/annotation from AI agent responses (Azure AI Agent SDK annotation types). */

@@ -2,15 +2,43 @@
   width: 100%;
   height: 100vh;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  padding: 24px;
+  box-sizing: border-box;
   position: relative;
+  align-items: stretch;
 }
 
 .mainContent {
-  flex: 1;
   display: flex;
-  width: 100%;
+  min-width: 0;
   position: relative;
   overflow: hidden;
+  justify-content: center;
+}
+
+.taskPanel {
+  overflow: hidden;
+  box-sizing: border-box;
+  align-self: start;
+}
+
+.taskPanelScroll {
+  max-height: calc(100vh - 48px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+@media (max-width: 1200px) {
+  .content {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .taskPanel {
+    height: auto;
+  }
 }

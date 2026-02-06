@@ -54,7 +54,7 @@ dotnet run
 .\deployment\scripts\start-local-dev.ps1
 ```
 
-Backend runs at http://localhost:8080 (API + static files).
+Backend runs at http://localhost:8089 (API + static files).
 
 ### Configuration
 
@@ -130,6 +130,6 @@ dotnet list package --vulnerable
 | 401 Unauthorized | Verify token has `Chat.ReadWrite` scope |
 | AI Foundry connection fails | Check `AI_AGENT_ENDPOINT` in `.env` |
 | Local auth fails | Run `az login` or `azd auth login` |
-| Port 8080 in use | Change in `launchSettings.json` |
+| Port 8089 in use | Change in `launchSettings.json` |
 
 For AI-assisted development, see `.github/skills/writing-csharp-code/SKILL.md` and `.github/skills/implementing-chat-streaming/SKILL.md`.

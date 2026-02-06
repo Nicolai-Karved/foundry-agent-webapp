@@ -1,5 +1,5 @@
 .chatInputContainer {
-  padding: 1rem;
+  padding: 1rem 0.5rem;
   background: transparent;
   width: 100%;
   max-width: 900px;
@@ -7,6 +7,7 @@
   flex-shrink: 0;
   position: relative;
   z-index: 1;
+  box-sizing: border-box;
 }
 
 .inputWrapper {

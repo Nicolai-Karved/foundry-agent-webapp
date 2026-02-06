@@ -1,6 +1,6 @@
 import type { Dispatch } from 'react';
 import type { AppAction } from '../types/appState';
-import type { IChatItem } from '../types/chat';
+import type { IChatItem, IStructuredResponse } from '../types/chat';
 import type { AppError } from '../types/errors';
 import { isAppError } from '../types/errors';
 import {
@@ -304,6 +304,40 @@ export class ChatService {
     let newConversationId = currentConversationId;
     let lastChunkContent: string | undefined;
     let buffer = '';
+    let structuredBuffer = '';
+    let structuredMode = false;
+    let placeholderSet = false;
+
+    const setPlaceholder = () => {
+      if (placeholderSet) return;
+      this.dispatch({
+        type: 'CHAT_SET_MESSAGE_CONTENT',
+        messageId,
+        content: 'Retrieving response...',
+      });
+      placeholderSet = true;
+    };
+
+    const finalizeStructured = () => {
+      const structured = this.parseStructuredResponse(structuredBuffer);
+      if (structured) {
+        this.dispatch({
+          type: 'CHAT_SET_MESSAGE_STRUCTURED',
+          messageId,
+          content: structured.response,
+          structured,
+        });
+        return;
+      }
+
+      if (structuredBuffer.trim()) {
+        this.dispatch({
+          type: 'CHAT_SET_MESSAGE_CONTENT',
+          messageId,
+          content: structuredBuffer,
+        });
+      }
+    };
 
     try {
       while (true) {
@@ -347,6 +381,19 @@ export class ChatService {
               break;
 
             case 'chunk':
+              if (typeof event.data.content === 'string') {
+                structuredBuffer += event.data.content;
+              }
+
+              if (!structuredMode && this.isStructuredCandidate(structuredBuffer)) {
+                structuredMode = true;
+              }
+
+              if (structuredMode) {
+                setPlaceholder();
+                break;
+              }
+
               if (event.data.content !== lastChunkContent) {
                 this.dispatch({
                   type: 'CHAT_STREAM_CHUNK',
@@ -391,6 +438,9 @@ export class ChatService {
               break;
 
             case 'done':
+              if (structuredMode) {
+                finalizeStructured();
+              }
               return;
 
             case 'error':
@@ -402,6 +452,10 @@ export class ChatService {
               throw error;
           }
         }
+      }
+
+      if (structuredMode) {
+        finalizeStructured();
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError' && this.streamCancelled) {
@@ -427,6 +481,57 @@ export class ChatService {
         // Reader may already be released
       }
     }
+  }
+
+  private isStructuredCandidate(content: string): boolean {
+    const trimmed = content.trimStart();
+    return trimmed.startsWith('{') || trimmed.startsWith('```');
+  }
+
+  private parseStructuredResponse(content: string): IStructuredResponse | null {
+    const trimmed = content.trim();
+    if (!trimmed) return null;
+
+    const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    const candidate = fenceMatch ? fenceMatch[1].trim() : trimmed;
+
+    const tryParse = (text: string) => {
+      try {
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    let parsed = tryParse(candidate);
+    if (!parsed) {
+      const start = candidate.indexOf('{');
+      const end = candidate.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        parsed = tryParse(candidate.slice(start, end + 1));
+      }
+    }
+
+    if (!parsed) return null;
+
+    const response = typeof parsed.response === 'string' ? parsed.response : null;
+    if (!response) return null;
+
+    const tasks = Array.isArray(parsed.tasks)
+      ? parsed.tasks.filter((task) => task && typeof task === 'object') as Array<Record<string, unknown>>
+      : [];
+
+    return {
+      response,
+      tasks,
+      documentName: typeof parsed.document_name === 'string' ? parsed.document_name : undefined,
+      documentId: typeof parsed.id === 'string' ? parsed.id : undefined,
+      raw: parsed,
+    };
   }
 
   /**

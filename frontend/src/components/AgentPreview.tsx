@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ChatInterface } from './ChatInterface';
 import { SettingsPanel } from './core/SettingsPanel';
+import { TaskPanel } from './TaskPanel';
 import { useAppState } from '../hooks/useAppState';
 import { useAuth } from '../hooks/useAuth';
 import { ChatService } from '../services/chatService';
@@ -27,6 +28,14 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
   const chatService = useMemo(() => {
     return new ChatService(apiUrl, getAccessToken, dispatch);
   }, [apiUrl, getAccessToken, dispatch]);
+
+  const latestStructured = useMemo(() => {
+    const latest = [...chat.messages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && message.structured);
+
+    return latest?.structured;
+  }, [chat.messages]);
 
   const handleSendMessage = async (text: string, files?: File[]) => {
     await chatService.sendMessage(text, chat.currentConversationId, files);
@@ -76,6 +85,16 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
           starterPrompts={starterPrompts}
         />
       </div>
+
+      <aside className={styles.taskPanel}>
+        <div className={styles.taskPanelScroll}>
+          <TaskPanel
+            tasks={latestStructured?.tasks ?? []}
+            title="Tasks"
+            subtitle={latestStructured?.documentName}
+          />
+        </div>
+      </aside>
       
       <SettingsPanel
         isOpen={isSettingsOpen}

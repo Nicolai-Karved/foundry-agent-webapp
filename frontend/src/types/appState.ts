@@ -45,6 +45,8 @@ export type AppAction =
   | { type: 'CHAT_SEND_MESSAGE'; message: IChatItem }
   | { type: 'CHAT_START_STREAM'; conversationId?: string; messageId: string }
   | { type: 'CHAT_STREAM_CHUNK'; messageId: string; content: string }
+  | { type: 'CHAT_SET_MESSAGE_CONTENT'; messageId: string; content: string }
+  | { type: 'CHAT_SET_MESSAGE_STRUCTURED'; messageId: string; content: string; structured: IChatItem['structured'] }
   | { type: 'CHAT_STREAM_ANNOTATIONS'; messageId: string; annotations: IAnnotation[] }
   | { type: 'CHAT_MCP_APPROVAL_REQUEST'; messageId: string; approvalRequest: IMcpApprovalRequest; previousResponseId: string | null }
   | { type: 'CHAT_STREAM_COMPLETE'; usage: IUsageInfo }

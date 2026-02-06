@@ -27,7 +27,7 @@ The `azd up` command:
 3. Builds and deploys your application
 4. Opens browser to your deployed app
 
-**Local Development**: http://localhost:5173 (frontend), http://localhost:8080 (backend)  
+**Local Development**: http://localhost:5173 (frontend), http://localhost:8089 (backend)  
 **Production**: https://<your-app>.azurecontainerapps.io
 
 ## Prerequisites
@@ -95,7 +95,7 @@ The workspace includes optimized VS Code configuration for AI-assisted developme
 
 | Task | Description | Port |
 |------|-------------|------|
-| `Backend: ASP.NET Core API` | `dotnet watch run` with hot reload | 8080 |
+| `Backend: ASP.NET Core API` | `dotnet watch run` with hot reload | 8089 |
 | `Frontend: React Vite` | `npm run dev` with HMR (auto-installs deps) | 5173 |
 | `Start Dev (VS Code Terminals)` | Starts both in parallel (default build task) | - |
 | `Install Frontend Dependencies` | `npm install --legacy-peer-deps` (runs automatically) | - |
