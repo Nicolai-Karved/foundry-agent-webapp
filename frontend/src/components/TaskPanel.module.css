@@ -53,6 +53,73 @@
   box-shadow: var(--shadow2);
   width: 100%;
   box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.taskCard:hover {
+  border-color: var(--colorBrandStroke1);
+  box-shadow: var(--shadow4);
+  transform: translateY(-1px);
+}
+
+.taskCardActive {
+  border-color: var(--colorBrandStroke1);
+  box-shadow: var(--shadow8);
+}
+
+.taskHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.taskName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--colorNeutralForeground1);
+}
+
+.severityTag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.severityHigh {
+  background-color: var(--colorPaletteRedBackground2);
+  color: var(--colorPaletteRedForeground1);
+  border-color: var(--colorPaletteRedBorder1);
+}
+
+.severityMedium {
+  background-color: var(--colorPaletteYellowBackground2);
+  color: var(--colorPaletteYellowForeground2);
+  border-color: var(--colorPaletteYellowBorder1);
+}
+
+.severityLow {
+  background-color: var(--colorPaletteGreenBackground2);
+  color: var(--colorPaletteGreenForeground2);
+  border-color: var(--colorPaletteGreenBorder1);
+}
+
+.severityNeutral {
+  background-color: var(--colorNeutralBackground3);
+  color: var(--colorNeutralForeground2);
+  border-color: var(--colorNeutralStroke2);
+}
+
+.taskDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .field {

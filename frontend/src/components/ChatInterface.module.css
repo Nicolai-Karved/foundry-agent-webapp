@@ -7,8 +7,8 @@
   flex: 1;
   min-height: 0;
   overflow: visible;
-  max-width: 900px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
 }
 
 /* Messages container - scrolling area */
@@ -29,7 +29,7 @@
 /* Messages wrapper - constrain max width for readability */
 .messagesWrapper {
   width: 100%;
-  max-width: 900px;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -103,7 +103,7 @@
 /* Error message wrapper - matches chat input width exactly */
 .errorWrapper {
   width: 100%;
-  max-width: 900px;
+  max-width: 100%;
   padding: 0 1rem;
   box-sizing: border-box;
 }

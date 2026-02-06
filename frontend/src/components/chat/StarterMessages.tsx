@@ -22,7 +22,7 @@ interface IStarterMessageProps {
 const defaultStarterPrompts = [
   "How can you help me?",
   "What are your capabilities?",
-  "Tell me about yourself",
+  "What standards do you support",
 ];
 
 export const StarterMessages = ({

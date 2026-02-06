@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef } from 'react';
 import type { StructuredTask } from '../types/chat';
 import styles from './TaskPanel.module.css';
 
@@ -5,10 +6,11 @@ interface TaskPanelProps {
   tasks: StructuredTask[];
   title?: string;
   subtitle?: string;
+  selectedTaskId?: string | null;
+  onSelectTask?: (task: StructuredTask, reference?: string) => void;
 }
 
 const taskKeyOrder = [
-  'id',
   'name',
   'severity',
   'description',
@@ -48,7 +50,7 @@ const getTaskEntries = (task: StructuredTask) => {
   });
 
   Object.keys(taskObject).forEach((key) => {
-    if (!taskKeyOrder.includes(key)) {
+    if (!taskKeyOrder.includes(key) && key !== 'id') {
       ordered.push([key, taskObject[key]]);
     }
   });
@@ -56,11 +58,102 @@ const getTaskEntries = (task: StructuredTask) => {
   return ordered;
 };
 
+const getTaskId = (task: StructuredTask, index: number) => {
+  if (task && typeof task === 'object') {
+    const taskObject = task as Record<string, unknown>;
+    if (typeof taskObject.id === 'string') return taskObject.id;
+    if (typeof taskObject.name === 'string') return taskObject.name;
+  }
+  return `task-${index}`;
+};
+
+const getReference = (task: StructuredTask): string | undefined => {
+  if (!task || typeof task !== 'object') return undefined;
+  const taskObject = task as Record<string, unknown>;
+  if (typeof taskObject.document_reference === 'string') return taskObject.document_reference;
+  if (typeof taskObject.reference === 'string') return taskObject.reference;
+  return undefined;
+};
+
+const getTaskName = (task: StructuredTask): string => {
+  if (!task || typeof task !== 'object') return 'Task';
+  const taskObject = task as Record<string, unknown>;
+  if (typeof taskObject.name === 'string') return taskObject.name;
+  return 'Task';
+};
+
+const getSeverity = (task: StructuredTask): string => {
+  if (!task || typeof task !== 'object') return 'Unknown';
+  const taskObject = task as Record<string, unknown>;
+  if (typeof taskObject.severity === 'string') return taskObject.severity;
+  return 'Unknown';
+};
+
+const getSeverityClass = (severity: string) => {
+  const normalized = severity.toLowerCase();
+  if (normalized === 'high') return styles.severityHigh;
+  if (normalized === 'medium') return styles.severityMedium;
+  if (normalized === 'low') return styles.severityLow;
+  return styles.severityNeutral;
+};
+
 export const TaskPanel: React.FC<TaskPanelProps> = ({
   tasks,
   title = 'Tasks',
   subtitle,
+  selectedTaskId,
+  onSelectTask,
 }) => {
+  const taskRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    const node = taskRefs.current.get(selectedTaskId);
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectedTaskId]);
+
+  const taskCards = useMemo(() => {
+    return tasks.map((task, index) => {
+      const taskId = getTaskId(task, index);
+      const isSelected = selectedTaskId === taskId;
+      const name = getTaskName(task);
+      const severity = getSeverity(task);
+      const severityClass = getSeverityClass(severity);
+      const entries = getTaskEntries(task).filter(([key]) => key !== 'name' && key !== 'severity');
+
+      return (
+        <button
+          key={taskId}
+          type="button"
+          ref={(node) => {
+            if (node) {
+              taskRefs.current.set(taskId, node);
+            }
+          }}
+          className={`${styles.taskCard} ${isSelected ? styles.taskCardActive : ''}`}
+          onClick={() => onSelectTask?.(task, getReference(task))}
+        >
+          <div className={styles.taskHeader}>
+            <span className={styles.taskName}>{name}</span>
+            <span className={`${styles.severityTag} ${severityClass}`}>{severity}</span>
+          </div>
+          {isSelected && (
+            <div className={styles.taskDetails}>
+              {entries.map(([key, value]) => (
+                <div key={`${taskId}-${key}`} className={styles.field}>
+                  <div className={styles.label}>{formatKeyLabel(key)}</div>
+                  {renderValue(value)}
+                </div>
+              ))}
+            </div>
+          )}
+        </button>
+      );
+    });
+  }, [tasks, selectedTaskId, onSelectTask]);
+
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
@@ -71,16 +164,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
         <div className={styles.empty}>No tasks</div>
       ) : (
         <div className={styles.taskList}>
-          {tasks.map((task, index) => (
-            <div key={`task-${index}`} className={styles.taskCard}>
-              {getTaskEntries(task).map(([key, value]) => (
-                <div key={`${key}-${index}`} className={styles.field}>
-                  <div className={styles.label}>{formatKeyLabel(key)}</div>
-                  {renderValue(value)}
-                </div>
-              ))}
-            </div>
-          ))}
+          {taskCards}
         </div>
       )}
     </div>

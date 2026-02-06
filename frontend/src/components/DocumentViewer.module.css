@@ -1,0 +1,116 @@
+.viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 16px;
+  background-color: var(--colorNeutralBackground1);
+  border: 1px solid var(--colorNeutralStroke1);
+  box-shadow: var(--shadow4);
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colorNeutralForeground3);
+}
+
+.fileName {
+  font-size: 13px;
+  color: var(--colorNeutralForeground2);
+  word-break: break-word;
+}
+
+.fileTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fileTab {
+  border: 1px solid var(--colorNeutralStroke1);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--colorNeutralBackground2);
+  font-size: 12px;
+  color: var(--colorNeutralForeground2);
+  cursor: pointer;
+}
+
+.fileTabActive {
+  background: var(--colorBrandBackground2);
+  color: var(--colorBrandForeground1);
+  border-color: var(--colorBrandStroke1);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.empty {
+  font-size: 13px;
+  color: var(--colorNeutralForeground3);
+  padding: 12px 0;
+}
+
+
+.pdfContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pdfPages {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pdfPage {
+  padding: 12px;
+  background-color: var(--colorNeutralBackground2);
+  border-radius: 12px;
+  border: 1px solid var(--colorNeutralStroke1);
+  display: flex;
+  justify-content: center;
+}
+
+.pdfCanvas {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.image {
+  max-width: 100%;
+  border-radius: 12px;
+  display: block;
+}
+
+.textContent {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: var(--fontFamilyMonospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+}
+
+.highlight {
+  background-color: var(--colorPaletteYellowBackground2);
+  color: var(--colorNeutralForeground1);
+  padding: 0 2px;
+  border-radius: 3px;
+}

@@ -45,17 +45,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
   };
 
   useEffect(() => {
-    if (messages.length === 0) return;
-
-    const lastMessage = messages[messages.length - 1];
-    const isStructuredResponse =
-      lastMessage.role === 'assistant' &&
-      (Boolean(lastMessage.structured) || lastMessage.content.trim() === 'Retrieving response...');
-
-    if (!isStructuredResponse) {
-      // Scroll immediately on every message change for real-time streaming feel
-      scrollToBottom();
-    }
+    return undefined;
   }, [messages]);
 
   // Announce streaming status changes to screen readers
