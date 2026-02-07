@@ -18,6 +18,32 @@
   gap: 8px;
 }
 
+.highlightControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.highlightButton {
+  border: 1px solid var(--colorNeutralStroke1);
+  background: var(--colorNeutralBackground2);
+  color: var(--colorNeutralForeground2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.highlightButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.highlightCount {
+  font-size: 12px;
+  color: var(--colorNeutralForeground3);
+}
+
 .title {
   font-size: 12px;
   font-weight: 600;
@@ -71,12 +97,18 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+}
+
+.pdfDocument {
+  display: block;
 }
 
 .pdfPages {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  width: 100%;
 }
 
 .pdfPage {
@@ -84,14 +116,51 @@
   background-color: var(--colorNeutralBackground2);
   border-radius: 12px;
   border: 1px solid var(--colorNeutralStroke1);
-  display: flex;
-  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.pdfCanvas {
-  max-width: 100%;
-  height: auto;
+.pdfPageContent :global(.react-pdf__Page__canvas) {
+  width: 100% !important;
+  height: auto !important;
   border-radius: 8px;
+}
+
+.pdfPageContent {
+  width: 100%;
+}
+
+.pdfPageContent :global(.react-pdf__Page__textContent) {
+  user-select: text;
+}
+
+.pdfTextSpan {
+  background: transparent;
+  color: transparent;
+  text-shadow: none;
+}
+
+.pdfTextHighlight {
+  color: transparent !important;
+  background: none;
+  border-bottom: 2px solid var(--pdf-highlight-color, var(--colorPaletteYellowBackground2));
+  padding-bottom: 1px;
+}
+
+.pdfHighlightHigh {
+  --pdf-highlight-color: var(--colorPaletteRedForeground1);
+}
+
+.pdfHighlightMedium {
+  --pdf-highlight-color: var(--colorPaletteYellowForeground2);
+}
+
+.pdfHighlightLow {
+  --pdf-highlight-color: var(--colorPaletteGreenForeground2);
+}
+
+.pdfHighlightNeutral {
+  --pdf-highlight-color: var(--colorNeutralForeground2);
 }
 
 .image {

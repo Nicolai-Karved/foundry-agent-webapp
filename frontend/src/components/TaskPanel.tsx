@@ -7,7 +7,7 @@ interface TaskPanelProps {
   title?: string;
   subtitle?: string;
   selectedTaskId?: string | null;
-  onSelectTask?: (task: StructuredTask, reference?: string) => void;
+  onSelectTask?: (task: StructuredTask, reference?: string | string[], fallbackReference?: string | string[], severity?: string) => void;
 }
 
 const taskKeyOrder = [
@@ -26,6 +26,14 @@ const formatKeyLabel = (key: string) =>
 const renderValue = (value: unknown) => {
   if (value === null || value === undefined) {
     return <span className={styles.valueMuted}>-</span>;
+  }
+
+  if (Array.isArray(value)) {
+    return (
+      <pre className={styles.valueBlock}>
+        {value.map((entry) => String(entry)).join('\n')}
+      </pre>
+    );
   }
 
   if (typeof value === 'object') {
@@ -70,8 +78,23 @@ const getTaskId = (task: StructuredTask, index: number) => {
 const getReference = (task: StructuredTask): string | undefined => {
   if (!task || typeof task !== 'object') return undefined;
   const taskObject = task as Record<string, unknown>;
-  if (typeof taskObject.document_reference === 'string') return taskObject.document_reference;
   if (typeof taskObject.reference === 'string') return taskObject.reference;
+  if (Array.isArray(taskObject.reference)) {
+    const entries = taskObject.reference.filter((entry) => typeof entry === 'string');
+    if (entries.length > 0) return entries as string[];
+  }
+  if (typeof taskObject.document_reference === 'string') return taskObject.document_reference;
+  return undefined;
+};
+
+const getDocumentReference = (task: StructuredTask): string | string[] | undefined => {
+  if (!task || typeof task !== 'object') return undefined;
+  const taskObject = task as Record<string, unknown>;
+  if (typeof taskObject.document_reference === 'string') return taskObject.document_reference;
+  if (Array.isArray(taskObject.document_reference)) {
+    const entries = taskObject.document_reference.filter((entry) => typeof entry === 'string');
+    if (entries.length > 0) return entries as string[];
+  }
   return undefined;
 };
 
@@ -133,7 +156,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             }
           }}
           className={`${styles.taskCard} ${isSelected ? styles.taskCardActive : ''}`}
-          onClick={() => onSelectTask?.(task, getReference(task))}
+          onClick={() => onSelectTask?.(task, getReference(task), getDocumentReference(task), severity)}
         >
           <div className={styles.taskHeader}>
             <span className={styles.taskName}>{name}</span>

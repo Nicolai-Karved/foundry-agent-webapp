@@ -23,7 +23,9 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
   const { getAccessToken } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [highlightText, setHighlightText] = useState<string | null>(null);
+  const [highlightText, setHighlightText] = useState<string | string[] | null>(null);
+  const [highlightFallbackText, setHighlightFallbackText] = useState<string | string[] | null>(null);
+  const [highlightSeverity, setHighlightSeverity] = useState<string | null>(null);
   const [docRatio, setDocRatio] = useState(0.4);
   const [isDragging, setIsDragging] = useState(false);
   const [handleLeft, setHandleLeft] = useState<number | null>(null);
@@ -52,11 +54,22 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     return latestMessage?.attachments;
   }, [chat.messages]);
 
-  const handleTaskSelect = (task: Record<string, unknown>, reference?: string) => {
+  const handleTaskSelect = (
+    task: Record<string, unknown>,
+    reference?: string | string[],
+    fallbackReference?: string | string[],
+    severity?: string
+  ) => {
     const taskId = typeof task.id === 'string' ? task.id : typeof task.name === 'string' ? task.name : null;
     setSelectedTaskId(taskId);
     if (reference) {
       setHighlightText(reference);
+    }
+    if (fallbackReference) {
+      setHighlightFallbackText(fallbackReference);
+    }
+    if (severity) {
+      setHighlightSeverity(severity);
     }
   };
 
@@ -156,7 +169,12 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     >
       <aside className={styles.documentPanel}>
         <div className={styles.documentPanelScroll}>
-          <DocumentViewer attachments={latestAttachments} highlightText={highlightText} />
+          <DocumentViewer
+            attachments={latestAttachments}
+            highlightText={highlightText}
+            highlightFallbackText={highlightFallbackText}
+            highlightSeverity={highlightSeverity}
+          />
         </div>
       </aside>
 
