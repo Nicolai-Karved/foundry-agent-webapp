@@ -61,7 +61,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [pageWidth, setPageWidth] = useState<number>();
   const [highlightCount, setHighlightCount] = useState(0);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [manualSearch, setManualSearch] = useState('');
+  const [manualHighlightCount, setManualHighlightCount] = useState(0);
+  const [activeManualIndex, setActiveManualIndex] = useState(0);
   const lastReferenceKey = useRef<string>('');
+  const lastManualKey = useRef<string>('');
+  const lastManualIndex = useRef<number>(0);
 
   const files = attachments && attachments.length > 0 ? attachments : [];
   const selected = files[selectedIndex];
@@ -230,18 +235,23 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     const applyMatchAtIndex = (
       tokens: Array<{ token: string; span: HTMLSpanElement }>,
       matches: Array<{ start: number; end: number }>,
-      index: number
+      index: number,
+      className: string,
+      shouldScroll: boolean,
+      padding: number
     ) => {
       if (matches.length === 0) return false;
       const match = matches[index];
       let firstMatch: HTMLSpanElement | null = null;
-      for (let i = match.start; i < match.end; i += 1) {
+      const start = Math.max(0, match.start - padding);
+      const end = Math.min(tokens.length, match.end + padding);
+      for (let i = start; i < end; i += 1) {
         const span = tokens[i]?.span;
         if (!span) continue;
-        span.classList.add(styles.pdfTextHighlight, severityClass);
+        span.classList.add(styles.pdfTextHighlight, className);
         if (!firstMatch) firstMatch = span;
       }
-      if (firstMatch) {
+      if (firstMatch && shouldScroll) {
         firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
       return true;
@@ -259,7 +269,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
       const primaryRefs = normalizeList(highlightText);
       const fallbackRefs = normalizeList(highlightFallbackText);
-      const matches: Array<{ start: number; end: number }> = [];
+      const taskMatches: Array<{ start: number; end: number }> = [];
+      const manualMatches: Array<{ start: number; end: number }> = [];
 
       const tokens = buildTokens(spans);
       if (tokens.length === 0) return false;
@@ -275,28 +286,76 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       primaryRefs.forEach((reference) => {
         const result = findMatchesForReference(reference, tokens);
         if (result) {
-          matches.push(...result);
+          taskMatches.push(...result);
         }
       });
 
-      if (matches.length === 0) {
+      if (taskMatches.length === 0) {
         fallbackRefs.forEach((reference) => {
           const result = findMatchesForReference(reference, tokens);
           if (result) {
-            matches.push(...result);
+            taskMatches.push(...result);
           }
         });
       }
 
-      setHighlightCount(matches.length);
-      if (matches.length === 0) return !highlightText && !highlightFallbackText;
-
-      const nextIndex = Math.min(activeMatchIndex, matches.length - 1);
-      if (nextIndex !== activeMatchIndex) {
-        setActiveMatchIndex(nextIndex);
+      const manualQuery = manualSearch.trim();
+      if (manualQuery) {
+        const result = findMatchesForReference(manualQuery, tokens);
+        if (result) {
+          manualMatches.push(...result);
+        }
       }
 
-      return applyMatchAtIndex(tokens, matches, nextIndex);
+      if (highlightCount !== taskMatches.length) {
+        setHighlightCount(taskMatches.length);
+      }
+
+      if (manualHighlightCount !== manualMatches.length) {
+        setManualHighlightCount(manualMatches.length);
+      }
+
+      const nextTaskIndex = taskMatches.length > 0
+        ? Math.min(activeMatchIndex, taskMatches.length - 1)
+        : 0;
+      if (taskMatches.length > 0 && nextTaskIndex !== activeMatchIndex) {
+        setActiveMatchIndex(nextTaskIndex);
+      }
+
+      const nextManualIndex = manualMatches.length > 0
+        ? Math.min(activeManualIndex, manualMatches.length - 1)
+        : 0;
+      if (manualMatches.length > 0 && nextManualIndex !== activeManualIndex) {
+        setActiveManualIndex(nextManualIndex);
+      }
+
+      const manualKey = JSON.stringify({ manualQuery, count: manualMatches.length });
+      const shouldScrollManual =
+        manualKey !== lastManualKey.current || nextManualIndex !== lastManualIndex.current;
+      if (manualKey !== lastManualKey.current) {
+        lastManualKey.current = manualKey;
+      }
+      if (nextManualIndex !== lastManualIndex.current) {
+        lastManualIndex.current = nextManualIndex;
+      }
+
+      let applied = false;
+      if (taskMatches.length > 0) {
+        applied = applyMatchAtIndex(tokens, taskMatches, nextTaskIndex, severityClass, true, 0);
+      }
+
+      if (manualMatches.length > 0) {
+        applied = applyMatchAtIndex(
+          tokens,
+          manualMatches,
+          nextManualIndex,
+          styles.pdfManualHighlight,
+          shouldScrollManual,
+          0
+        ) || applied;
+      }
+
+      return applied || (!highlightText && !highlightFallbackText && !manualQuery);
     };
 
     const applied = applyHighlight();
@@ -313,7 +372,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       cancelled = true;
       observer?.disconnect();
     };
-  }, [highlightText, highlightFallbackText, highlightSeverity, isPdf, numPages, selected?.dataUri, activeMatchIndex]);
+  }, [
+    highlightText,
+    highlightFallbackText,
+    highlightSeverity,
+    manualSearch,
+    isPdf,
+    numPages,
+    selected?.dataUri,
+    activeMatchIndex,
+    activeManualIndex,
+    highlightCount,
+    manualHighlightCount,
+  ]);
 
   const handlePrevHighlight = () => {
     if (highlightCount === 0) return;
@@ -323,6 +394,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const handleNextHighlight = () => {
     if (highlightCount === 0) return;
     setActiveMatchIndex((prev) => (prev + 1) % highlightCount);
+  };
+
+  const handlePrevManualHighlight = () => {
+    if (manualHighlightCount === 0) return;
+    setActiveManualIndex((prev) => (prev - 1 + manualHighlightCount) % manualHighlightCount);
+  };
+
+  const handleNextManualHighlight = () => {
+    if (manualHighlightCount === 0) return;
+    setActiveManualIndex((prev) => (prev + 1) % manualHighlightCount);
   };
 
   const highlightedContent = useMemo(() => {
@@ -349,7 +430,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     <div className={styles.viewer}>
       <div className={styles.header}>
         <div className={styles.title}>Document</div>
-        <div className={styles.highlightControls}>
+        <div className={styles.taskSearchRow}>
+          <div className={styles.highlightLabel}>Task search</div>
           <button
             type="button"
             className={styles.highlightButton}
@@ -371,6 +453,57 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           >
             ↓
           </button>
+        </div>
+        <div className={styles.manualSearchRow}>
+          <div className={styles.searchField}>
+            <input
+              className={styles.searchInput}
+              type="text"
+              value={manualSearch}
+              placeholder="Search in document"
+              onChange={(event) => {
+                setManualSearch(event.target.value);
+                setActiveManualIndex(0);
+              }}
+            />
+            {manualSearch && (
+              <button
+                type="button"
+                className={styles.searchClear}
+                onClick={() => {
+                  setManualSearch('');
+                  setActiveManualIndex(0);
+                  setManualHighlightCount(0);
+                }}
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <div className={styles.highlightControls}>
+            <button
+              type="button"
+              className={styles.highlightButton}
+              onClick={handlePrevManualHighlight}
+              disabled={manualHighlightCount === 0}
+              aria-label="Previous manual highlight"
+            >
+              ↑
+            </button>
+            <div className={styles.highlightCount}>
+              {manualHighlightCount > 0 ? `${activeManualIndex + 1}/${manualHighlightCount}` : '0/0'}
+            </div>
+            <button
+              type="button"
+              className={styles.highlightButton}
+              onClick={handleNextManualHighlight}
+              disabled={manualHighlightCount === 0}
+              aria-label="Next manual highlight"
+            >
+              ↓
+            </button>
+          </div>
         </div>
         {files.length > 1 && (
           <div className={styles.fileTabs}>

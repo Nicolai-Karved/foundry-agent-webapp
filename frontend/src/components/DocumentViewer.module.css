@@ -24,6 +24,60 @@
   gap: 8px;
 }
 
+.highlightLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--colorNeutralForeground3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.taskSearchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.manualSearchRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow: hidden;
+  align-items: center;
+  gap: 10px;
+}
+
+.searchField {
+  position: relative;
+  min-width: 0;
+}
+
+.searchInput {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--colorNeutralStroke1);
+  border-radius: 8px;
+  padding: 6px 28px 6px 10px;
+  font-size: 13px;
+  color: var(--colorNeutralForeground1);
+  flex-shrink: 0;
+  background: var(--colorNeutralBackground2);
+}
+
+.searchClear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--colorNeutralForeground3);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
 .highlightButton {
   border: 1px solid var(--colorNeutralStroke1);
   background: var(--colorNeutralBackground2);
@@ -134,6 +188,14 @@
   user-select: text;
 }
 
+.pdfPageContent :global(.react-pdf__Page__textContent span::selection) {
+  background: rgba(0, 120, 212, 0.25);
+}
+
+.pdfPageContent :global(.react-pdf__Page__textContent span::-moz-selection) {
+  background: rgba(0, 120, 212, 0.25);
+}
+
 .pdfTextSpan {
   background: transparent;
   color: transparent;
@@ -143,8 +205,12 @@
 .pdfTextHighlight {
   color: transparent !important;
   background: none;
-  border-bottom: 2px solid var(--pdf-highlight-color, var(--colorPaletteYellowBackground2));
-  padding-bottom: 1px;
+  border-bottom: 6px solid var(--pdf-highlight-color, var(--colorPaletteYellowBackground2));
+  padding-bottom: 2px;
+}
+
+.pdfManualHighlight {
+  border-bottom: 2px solid var(--colorBrandForeground1);
 }
 
 .pdfHighlightHigh {
