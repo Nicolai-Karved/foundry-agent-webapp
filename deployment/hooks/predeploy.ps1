@@ -13,6 +13,7 @@ $tenantId = azd env get-value ENTRA_TENANT_ID 2>$null
 $acrName = azd env get-value AZURE_CONTAINER_REGISTRY_NAME 2>$null
 $resourceGroup = azd env get-value AZURE_RESOURCE_GROUP_NAME 2>$null
 $containerApp = azd env get-value AZURE_CONTAINER_APP_NAME 2>$null
+$functionAppName = azd env get-value FUNCTION_APP_NAME 2>$null
 
 if (-not $clientId -or -not $tenantId) {
     Write-Host "[ERROR] ENTRA_SPA_CLIENT_ID or ENTRA_TENANT_ID not set" -ForegroundColor Red
@@ -102,6 +103,26 @@ try {
             Write-Host "[OK] Container App updated" -ForegroundColor Green
         } else {
             Write-Host "[SKIP] Container App not yet provisioned (first run)" -ForegroundColor Yellow
+        }
+    }
+
+    if ($functionAppName -and $resourceGroup) {
+        $functionProject = Join-Path $projectRoot "functions/BimCuIngest/BimCuIngest.csproj"
+        if (Test-Path $functionProject) {
+            Write-Host "Publishing Function App..." -ForegroundColor Cyan
+            $publishDir = Join-Path $projectRoot "functions/BimCuIngest/bin/Release/net8.0/publish"
+            dotnet publish $functionProject -c Release -o $publishDir 2>&1 | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "Function publish failed" }
+
+            $zipPath = Join-Path $env:TEMP "bim-cu-ingest.zip"
+            if (Test-Path $zipPath) { Remove-Item $zipPath -Force -EA SilentlyContinue }
+            Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -Force
+
+            az functionapp deployment source config-zip --name $functionAppName --resource-group $resourceGroup --src $zipPath --output none
+            if ($LASTEXITCODE -ne 0) { throw "Function App deployment failed" }
+            Write-Host "[OK] Function App deployed" -ForegroundColor Green
+        } else {
+            Write-Host "[SKIP] Function project not found at $functionProject" -ForegroundColor Yellow
         }
     }
     

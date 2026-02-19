@@ -22,6 +22,23 @@ public record ChatRequest
     /// Response ID to continue from (for MCP approval flow).
     /// </summary>
     public string? PreviousResponseId { get; init; }
+    /// <summary>
+    /// Standards selected for policy and retrieval (Prompt 2 + Prompt 3).
+    /// </summary>
+    public List<StandardSelection>? StandardsSelected { get; init; }
+    /// <summary>
+    /// Optional policy overrides for Prompt 2 (Policy/Dynamic).
+    /// </summary>
+    public PolicyConfig? Policy { get; init; }
+    /// <summary>
+    /// Retrieval configuration for grounded standards clauses (Prompt 3).
+    /// </summary>
+    public RetrievalConfig? Retrieval { get; init; }
+    /// <summary>
+    /// Optional route hint for selecting specialist agent behavior.
+    /// Supported values: air, eir, bep.
+    /// </summary>
+    public string? AgentRouteHint { get; init; }
 }
 
 /// <summary>
@@ -50,4 +67,44 @@ public record FileAttachment
     /// MIME type (e.g., application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document)
     /// </summary>
     public required string MimeType { get; init; }
+}
+
+/// <summary>
+/// Selected standard metadata used to build the Policy prompt and retrieval filters.
+/// </summary>
+public record StandardSelection
+{
+    public required string StandardId { get; init; }
+    public string? Title { get; init; }
+    public string? Version { get; init; }
+    public string? Jurisdiction { get; init; }
+    public int Priority { get; init; } = 1;
+    public bool Mandatory { get; init; } = true;
+}
+
+/// <summary>
+/// Policy prompt configuration for Prompt 2 (Policy/Dynamic).
+/// </summary>
+public record PolicyConfig
+{
+    public string? DocType { get; init; }
+    public string? ValidationMode { get; init; }
+    public string? ScoringMethod { get; init; }
+    public double? MandatoryWeight { get; init; }
+    public double? NonMandatoryWeight { get; init; }
+    public bool? CriticalFailsImmediate { get; init; }
+    public int? MaxMajorBeforeFail { get; init; }
+    public string? ScoringNotes { get; init; }
+    public string? RunId { get; init; }
+    public string? ProjectProfile { get; init; }
+    public string? CompanyInternalStandardId { get; init; }
+}
+
+/// <summary>
+/// Retrieval configuration for Prompt 3 grounded clauses.
+/// </summary>
+public record RetrievalConfig
+{
+    public int? TopKClausesPerStandard { get; init; }
+    public string? ChunkType { get; init; }
 }

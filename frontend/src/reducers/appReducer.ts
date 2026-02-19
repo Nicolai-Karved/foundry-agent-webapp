@@ -134,6 +134,34 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     }
 
+    case 'CHAT_SET_MESSAGE_AGENT': {
+      const messageIndex = state.chat.messages.findIndex(
+        msg => msg.id === action.messageId
+      );
+
+      if (messageIndex === -1) {
+        return state;
+      }
+
+      const updatedMessages = [...state.chat.messages];
+      updatedMessages[messageIndex] = {
+        ...updatedMessages[messageIndex],
+        more: {
+          ...updatedMessages[messageIndex].more,
+          agentName: action.agentName,
+          agentRoute: action.agentRoute,
+        },
+      };
+
+      return {
+        ...state,
+        chat: {
+          ...state.chat,
+          messages: updatedMessages,
+        },
+      };
+    }
+
     case 'CHAT_SET_MESSAGE_STRUCTURED': {
       const messageIndex = state.chat.messages.findIndex(
         msg => msg.id === action.messageId
@@ -148,6 +176,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         ...updatedMessages[messageIndex],
         content: action.content,
         structured: action.structured,
+        annotations: action.annotations ?? updatedMessages[messageIndex].annotations,
       };
 
       return {
@@ -298,6 +327,24 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         ui: {
           ...state.ui,
           chatInputEnabled: true,
+        },
+      };
+
+    case 'SET_STANDARDS_SELECTION':
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          selectedStandards: action.selectedStandards,
+        },
+      };
+
+    case 'SET_AGENT_ROUTE_OVERRIDE':
+      return {
+        ...state,
+        settings: {
+          ...state.settings,
+          agentRouteOverride: action.agentRouteOverride,
         },
       };
 

@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Tooltip } from '@fluentui/react-components';
 import type { IAnnotation } from '../../types/chat';
+import { buildCitationTooltipText } from '../../utils/citationTooltip';
 import styles from './CitationMarker.module.css';
 
 interface CitationMarkerProps {
@@ -21,7 +22,7 @@ function CitationMarkerComponent({
   annotation,
   onClick 
 }: CitationMarkerProps) {
-  const tooltipContent = annotation?.label || `Citation ${index}`;
+  const tooltipContent = buildCitationTooltipText(index, annotation);
   
   const handleClick = () => {
     onClick(index, annotation);
@@ -42,7 +43,7 @@ function CitationMarkerComponent({
         onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
-        aria-label={`Citation ${index}: ${tooltipContent}`}
+        aria-label={`Citation ${index}: ${annotation?.label || `Citation ${index}`}`}
       >
         {index}
       </sup>

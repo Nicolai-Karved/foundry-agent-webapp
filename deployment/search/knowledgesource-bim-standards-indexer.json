@@ -1,0 +1,36 @@
+{
+  "name": "knowledgesource-bim-standards-indexer",
+  "dataSourceName": "knowledgesource-bim-standards-datasource",
+  "targetIndexName": "bim-standards-paragraph-index",
+  "schedule": {
+    "interval": "P1D"
+  },
+  "parameters": {
+    "configuration": {
+      "dataToExtract": "contentAndMetadata",
+      "parsingMode": "jsonLines"
+    }
+  },
+  "fieldMappings": [
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "blob_url"
+    },
+    {
+      "sourceFieldName": "metadata_storage_name",
+      "targetFieldName": "blobName"
+    },
+    {
+      "sourceFieldName": "id",
+      "targetFieldName": "uid"
+    },
+    {
+      "sourceFieldName": "content",
+      "targetFieldName": "snippet"
+    },
+    {
+      "sourceFieldName": "blobName",
+      "targetFieldName": "snippet_parent_id"
+    }
+  ]
+}

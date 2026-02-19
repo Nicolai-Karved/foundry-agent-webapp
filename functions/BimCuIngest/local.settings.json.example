@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "DocumentsStorage": "<storage-connection-string>",
+    "CU_ENDPOINT": "https://di-bim-documentation.cognitiveservices.azure.com/",
+    "CU_ANALYZER_ID": "UK_BIM_Standards",
+    "CU_INPUT_CONTAINER": "bim-standards",
+    "CU_INPUT_PREFIX": "source/",
+    "CU_OUTPUT_PREFIX": "cu-output/",
+    "CU_ANALYZE_PATH": "contentunderstanding/analyzers/{analyzerId}:analyze?api-version=2025-11-01",
+    "CU_POLL_INTERVAL_SECONDS": "2"
+  }
+}

@@ -16,7 +16,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 2rem 1.5rem;
+  padding: 2rem 0.5rem;
   background-color: var(--colorNeutralBackground1);
   position: relative;
   min-height: 0;
@@ -29,7 +29,7 @@
 /* Messages wrapper - constrain max width for readability */
 .messagesWrapper {
   width: 100%;
-  max-width: 100%;
+  max-width: 900px;
   display: flex;
   flex-direction: column;
 }

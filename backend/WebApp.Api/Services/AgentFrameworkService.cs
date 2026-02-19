@@ -6,6 +6,9 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using OpenAI.Responses;
 using System.Runtime.CompilerServices;
+using System.Diagnostics;
+using System.Linq;
+using System.Text;
 using WebApp.Api.Models;
 
 namespace WebApp.Api.Services;
@@ -22,31 +25,54 @@ namespace WebApp.Api.Services;
 /// </remarks>
 public class AgentFrameworkService : IDisposable
 {
+    private static readonly ActivitySource ActivitySource = new("WebApp.Api.AgentFramework");
     private readonly AIProjectClient _projectClient;
-    private readonly string _agentId;
+    private readonly string _defaultAgentId;
+    private readonly string? _airAgentId;
+    private readonly string? _eirAgentId;
+    private readonly string? _bepAgentId;
     private readonly ILogger<AgentFrameworkService> _logger;
+    private readonly StandardsRetrievalService _standardsRetrieval;
+    private readonly StandardsPromptBuilder _promptBuilder;
+    private readonly bool _requirementsFirstEnabled;
+    private readonly int _requirementsFirstMaxPerStandard;
+    private readonly int _requirementsFirstPageSize;
     private ChatClientAgent? _cachedAgent;
     private AgentMetadataResponse? _cachedMetadata;
     private readonly SemaphoreSlim _agentLock = new(1, 1);
     private bool _disposed = false;
     private ResponseTokenUsage? _lastUsage;
+    private string? _resolvedAgentName;
+    private string? _resolvedAgentReferenceName;
 
     public AgentFrameworkService(
         IConfiguration configuration,
-        ILogger<AgentFrameworkService> logger)
+        ILogger<AgentFrameworkService> logger,
+        StandardsRetrievalService standardsRetrieval,
+        StandardsPromptBuilder promptBuilder)
     {
         _logger = logger;
+        _standardsRetrieval = standardsRetrieval;
+        _promptBuilder = promptBuilder;
+
+        _requirementsFirstEnabled = configuration.GetValue<bool?>("StandardsCompliance:RequirementsFirstEnabled") ?? false;
+        _requirementsFirstMaxPerStandard = configuration.GetValue<int?>("StandardsCompliance:RequirementsFirstMaxPerStandard") ?? 500;
+        _requirementsFirstPageSize = configuration.GetValue<int?>("StandardsCompliance:RequirementsFirstPageSize") ?? 100;
 
         var endpoint = configuration["AI_AGENT_ENDPOINT"]
             ?? throw new InvalidOperationException("AI_AGENT_ENDPOINT is not configured");
 
-        _agentId = configuration["AI_AGENT_ID"]
+        _defaultAgentId = configuration["AI_AGENT_ID"]
             ?? throw new InvalidOperationException("AI_AGENT_ID is not configured");
+
+        _airAgentId = configuration["AI_AGENT_ID_AIR"];
+        _eirAgentId = configuration["AI_AGENT_ID_EIR"];
+        _bepAgentId = configuration["AI_AGENT_ID_BEP"];
 
         _logger.LogDebug(
             "Initializing AgentFrameworkService: endpoint={Endpoint}, agentId={AgentId}", 
             endpoint, 
-            _agentId);
+            _defaultAgentId);
 
         TokenCredential credential;
         var environment = configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
@@ -73,35 +99,54 @@ public class AgentFrameworkService : IDisposable
     /// Get agent via Microsoft Agent Framework extension methods.
     /// Uses AIProjectClient.GetAIAgentAsync() which wraps v2 Agents API.
     /// </summary>
-    private async Task<ChatClientAgent> GetAgentAsync(CancellationToken cancellationToken = default)
+    private async Task<(ChatClientAgent Agent, string ReferenceName, string ConfiguredAgentId)> GetAgentAsync(
+        string? configuredAgentId = null,
+        CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_cachedAgent != null)
-            return _cachedAgent;
+        var effectiveAgentId = string.IsNullOrWhiteSpace(configuredAgentId)
+            ? _defaultAgentId
+            : configuredAgentId;
+
+        var isDefaultAgent = string.Equals(effectiveAgentId, _defaultAgentId, StringComparison.OrdinalIgnoreCase);
+
+        if (isDefaultAgent && _cachedAgent != null)
+            return (_cachedAgent, _resolvedAgentReferenceName ?? NormalizeAgentReferenceName(_defaultAgentId), _defaultAgentId);
 
         await _agentLock.WaitAsync(cancellationToken);
         try
         {
-            if (_cachedAgent != null)
-                return _cachedAgent;
+            if (isDefaultAgent && _cachedAgent != null)
+                return (_cachedAgent, _resolvedAgentReferenceName ?? NormalizeAgentReferenceName(_defaultAgentId), _defaultAgentId);
 
-            _logger.LogInformation("Loading agent via Agent Framework: {AgentId}", _agentId);
+            _logger.LogInformation("Loading agent via Agent Framework: {AgentId}", effectiveAgentId);
 
             // Use Microsoft.Agents.AI.AzureAI extension method - handles v2 Agents API internally
-            _cachedAgent = await _projectClient.GetAIAgentAsync(
-                name: _agentId,
-                cancellationToken: cancellationToken);
+            var resolved = await TryResolveAgentAsync(effectiveAgentId, cancellationToken);
+            var agent = resolved.Agent;
+            var referenceName = resolved.ReferenceName;
+
+            if (isDefaultAgent)
+            {
+                _cachedAgent = agent;
+                _resolvedAgentReferenceName = referenceName;
+            }
 
             // Get the AgentVersion from the cached agent for metadata
-            var agentVersion = _cachedAgent.GetService<AgentVersion>();
+            var agentVersion = agent.GetService<AgentVersion>();
             var definition = agentVersion?.Definition as PromptAgentDefinition;
             
             _logger.LogInformation(
                 "Loaded agent: name={AgentName}, model={Model}, version={Version}", 
-                agentVersion?.Name ?? _agentId,
+                agentVersion?.Name ?? effectiveAgentId,
                 definition?.Model ?? "unknown",
                 agentVersion?.Version ?? "latest");
+
+            if (isDefaultAgent)
+            {
+                _resolvedAgentName = agentVersion?.Name ?? effectiveAgentId;
+            }
 
             // Log StructuredInputs at debug level for troubleshooting
             if (definition?.StructuredInputs != null && definition.StructuredInputs.Count > 0)
@@ -111,11 +156,11 @@ public class AgentFrameworkService : IDisposable
                     string.Join(", ", definition.StructuredInputs.Keys));
             }
 
-            return _cachedAgent;
+            return (agent, referenceName, effectiveAgentId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to load agent: {AgentId}", _agentId);
+            _logger.LogError(ex, "Failed to load agent: {AgentId}", effectiveAgentId);
             throw;
         }
         finally
@@ -142,24 +187,77 @@ public class AgentFrameworkService : IDisposable
         List<FileAttachment>? fileDataUris = null,
         string? previousResponseId = null,
         McpApprovalResponse? mcpApproval = null,
+        List<StandardSelection>? standardsSelected = null,
+        PolicyConfig? policy = null,
+        RetrievalConfig? retrieval = null,
+        string? agentRouteHint = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        using var invokeActivity = ActivitySource.StartActivity("invoke_agent", ActivityKind.Client);
+        invokeActivity?.SetTag("gen_ai.operation.name", "invoke_agent");
+        invokeActivity?.SetTag("gen_ai.provider.name", "azure.ai.inference");
+        invokeActivity?.SetTag("gen_ai.conversation.id", conversationId);
+        invokeActivity?.SetTag("gen_ai.output.type", "text");
+        invokeActivity?.SetTag("app.has_images", (imageDataUris?.Count ?? 0) > 0);
+        invokeActivity?.SetTag("app.has_files", (fileDataUris?.Count ?? 0) > 0);
+        invokeActivity?.SetTag("app.has_mcp_approval", mcpApproval != null);
+
+        var routeDecision = DetermineAgentRoute(agentRouteHint, message, standardsSelected, fileDataUris);
+        var selectedAgentId = ResolveAgentId(routeDecision.Route);
+        var isBepComparisonRoute = routeDecision.Route == AgentRoute.Bep;
+
+        // Ensure agent can be resolved before starting streaming and use the resolved name/reference.
+        var agentContext = await GetAgentAsync(selectedAgentId, cancellationToken);
+        var agent = agentContext.Agent;
+        var agentVersion = agent.GetService<AgentVersion>();
+        var resolvedAgentName = agentVersion?.Name ?? _resolvedAgentName ?? selectedAgentId;
+        var resolvedAgentReferenceName = NormalizeAgentReferenceName(agentContext.ReferenceName);
+
+        invokeActivity?.SetTag("gen_ai.agent.id", selectedAgentId);
+        invokeActivity?.SetTag("gen_ai.agent.name", resolvedAgentName);
+        invokeActivity?.SetTag("app.agent.route_hint", agentRouteHint ?? "(none)");
+        invokeActivity?.SetTag("app.agent.route", routeDecision.Route.ToString().ToLowerInvariant());
+        invokeActivity?.SetTag("app.agent.route_reason", routeDecision.Reason);
+
+        if (string.IsNullOrWhiteSpace(resolvedAgentReferenceName))
+        {
+            throw new InvalidOperationException($"Unable to derive a valid agent reference name from configured agent id '{selectedAgentId}'.");
+        }
+
         _logger.LogInformation(
-            "Streaming message to conversation: {ConversationId}, ImageCount: {ImageCount}, FileCount: {FileCount}, HasApproval: {HasApproval}",
+            "Streaming message to conversation: {ConversationId}, ImageCount: {ImageCount}, FileCount: {FileCount}, HasApproval: {HasApproval}, Route={Route}, RouteReason={RouteReason}, AgentId={AgentId}",
             conversationId,
             imageDataUris?.Count ?? 0,
             fileDataUris?.Count ?? 0,
-            mcpApproval != null);
+            mcpApproval != null,
+            routeDecision.Route,
+            routeDecision.Reason,
+            selectedAgentId);
+
+        yield return StreamChunk.AgentInfo(
+            resolvedAgentName,
+            routeDecision.Route.ToString().ToLowerInvariant());
 
         // Get ProjectResponsesClient for the agent and conversation
         ProjectResponsesClient responsesClient
             = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
-                new AgentReference(_agentId), 
+                new AgentReference(resolvedAgentReferenceName), 
                 conversationId);
 
+        _logger.LogDebug(
+            "Using agent reference name for streaming: configured={ConfiguredAgentId}, reference={ReferenceName}, resolved={ResolvedName}",
+            selectedAgentId,
+            resolvedAgentReferenceName,
+            resolvedAgentName);
+
         CreateResponseOptions options = new() { StreamingEnabled = true };
+
+        var retrievalRan = false;
+        var emittedAnnotations = false;
+        List<GroundedClause> retrievedClauses = [];
+        string? currentResponseId = null;
 
         // If continuing from MCP approval, link to previous response
         if (!string.IsNullOrEmpty(previousResponseId) && mcpApproval != null)
@@ -182,6 +280,87 @@ public class AgentFrameworkService : IDisposable
                 throw new ArgumentException("Message cannot be null or whitespace", nameof(message));
             }
 
+            if (isBepComparisonRoute)
+            {
+                options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildBepComparisonContextPrompt()));
+                invokeActivity?.SetTag("app.standards.count", 0);
+            }
+            else
+            {
+                var effectiveStandards = await ResolveStandardsAsync(standardsSelected, cancellationToken);
+                invokeActivity?.SetTag("app.standards.count", effectiveStandards.Count);
+
+                if (effectiveStandards.Count > 0)
+                {
+                    using (var policyActivity = ActivitySource.StartActivity("build_policy_prompt", ActivityKind.Internal))
+                    {
+                        policyActivity?.SetTag("app.standards.count", effectiveStandards.Count);
+                        var policyPrompt = _promptBuilder.BuildPolicyPrompt(policy, effectiveStandards);
+                        options.InputItems.Add(ResponseItem.CreateUserMessageItem(policyPrompt));
+                    }
+
+                    if (_requirementsFirstEnabled)
+                    {
+                        using var requirementsActivity = ActivitySource.StartActivity("build_requirements_inventory", ActivityKind.Internal);
+                        requirementsActivity?.SetTag("app.requirements.max_per_standard", _requirementsFirstMaxPerStandard);
+                        requirementsActivity?.SetTag("app.requirements.page_size", _requirementsFirstPageSize);
+
+                        var chunkType = retrieval?.ChunkType ?? "paragraph";
+                        var requirements = await _standardsRetrieval.GetRequirementInventoryAsync(
+                            effectiveStandards,
+                            _requirementsFirstMaxPerStandard,
+                            _requirementsFirstPageSize,
+                            chunkType,
+                            cancellationToken);
+
+                        if (requirements.Count == 0)
+                        {
+                            _logger.LogWarning(
+                                "No requirements retrieved for standards-first evaluation. Falling back to document-only analysis for this request.");
+                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildNoStandardsFallbackPrompt()));
+                        }
+                        else
+                        {
+                            var requirementsPrompt = _promptBuilder.BuildRequirementsFirstPrompt(requirements);
+                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(requirementsPrompt));
+
+                            retrievedClauses = requirements
+                                .Select(r => new GroundedClause(
+                                    r.StandardId,
+                                    r.Version,
+                                    r.ClauseRef,
+                                    r.SourceDoc,
+                                    r.RequirementText))
+                                .ToList();
+                        }
+                    }
+                    else
+                    {
+                        retrievedClauses = (await _standardsRetrieval.RetrieveClausesAsync(
+                            message,
+                            effectiveStandards,
+                            retrieval,
+                            cancellationToken)).ToList();
+
+                        if (retrievedClauses.Count == 0)
+                        {
+                            _logger.LogWarning(
+                                "No standards clauses were retrieved. Falling back to document-only analysis for this request.");
+                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildNoStandardsFallbackPrompt()));
+                        }
+                        else
+                        {
+                            using var groundedActivity = ActivitySource.StartActivity("build_grounded_prompt", ActivityKind.Internal);
+                            groundedActivity?.SetTag("app.grounded_clauses.count", retrievedClauses.Count);
+                            var groundedPrompt = _promptBuilder.BuildGroundedClausesPrompt(retrievedClauses);
+                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(groundedPrompt));
+                        }
+                    }
+
+                    retrievalRan = retrievedClauses.Count > 0;
+                }
+            }
+
             // Build user message with optional images and files
             ResponseItem userMessage = BuildUserMessage(message, imageDataUris, fileDataUris);
             options.InputItems.Add(userMessage);
@@ -190,11 +369,22 @@ public class AgentFrameworkService : IDisposable
         // Dictionary to collect file search results for quote extraction
         var fileSearchQuotes = new Dictionary<string, string>();
 
-        await foreach (StreamingResponseUpdate update
+        await foreach (var update
             in responsesClient.CreateResponseStreamingAsync(
                 options: options,
                 cancellationToken: cancellationToken))
         {
+            if (update is StreamingResponseCreatedUpdate createdUpdate
+                && !string.IsNullOrWhiteSpace(createdUpdate.Response?.Id))
+            {
+                currentResponseId = createdUpdate.Response.Id;
+            }
+            else if (update is StreamingResponseInProgressUpdate inProgressUpdate
+                && !string.IsNullOrWhiteSpace(inProgressUpdate.Response?.Id))
+            {
+                currentResponseId = inProgressUpdate.Response.Id;
+            }
+
             if (update is StreamingResponseOutputTextDeltaUpdate deltaUpdate)
             {
                 yield return StreamChunk.Text(deltaUpdate.Delta);
@@ -204,6 +394,9 @@ public class AgentFrameworkService : IDisposable
                 // Check for MCP tool approval request
                 if (itemDoneUpdate.Item is McpToolCallApprovalRequestItem mcpApprovalItem)
                 {
+                    using var mcpActivity = ActivitySource.StartActivity("mcp_approval_request", ActivityKind.Internal);
+                    mcpActivity?.SetTag("gen_ai.operation.name", "execute_tool");
+                    mcpActivity?.SetTag("gen_ai.tool.name", mcpApprovalItem.ToolName ?? "unknown");
                     _logger.LogInformation(
                         "MCP tool approval requested: Id={Id}, Tool={Tool}, Server={Server}",
                         mcpApprovalItem.Id,
@@ -218,7 +411,8 @@ public class AgentFrameworkService : IDisposable
                         Id = mcpApprovalItem.Id,
                         ToolName = mcpApprovalItem.ToolName ?? "Unknown tool",
                         ServerLabel = mcpApprovalItem.ServerLabel ?? "MCP Server",
-                        Arguments = argumentsJson
+                        Arguments = argumentsJson,
+                        ResponseId = currentResponseId
                     });
                     continue;
                 }
@@ -245,17 +439,47 @@ public class AgentFrameworkService : IDisposable
                 if (annotations.Count > 0)
                 {
                     _logger.LogInformation("Extracted {Count} annotations from response", annotations.Count);
+                    emittedAnnotations = true;
+                    invokeActivity?.AddEvent(new ActivityEvent("annotations.emitted"));
                     yield return StreamChunk.WithAnnotations(annotations);
                 }
             }
             else if (update is StreamingResponseCompletedUpdate completedUpdate)
             {
-                _lastUsage = completedUpdate.Response.Usage;
+                if (!string.IsNullOrWhiteSpace(completedUpdate.Response?.Id))
+                {
+                    currentResponseId = completedUpdate.Response.Id;
+                }
+
+                _lastUsage = completedUpdate.Response?.Usage;
+                invokeActivity?.SetTag("gen_ai.usage.input_tokens", _lastUsage?.InputTokenCount ?? 0);
+                invokeActivity?.SetTag("gen_ai.usage.output_tokens", _lastUsage?.OutputTokenCount ?? 0);
+                invokeActivity?.SetTag("gen_ai.usage.total_tokens", _lastUsage?.TotalTokenCount ?? 0);
             }
             else if (update is StreamingResponseErrorUpdate errorUpdate)
             {
                 _logger.LogError("Stream error: {Error}", errorUpdate.Message);
+                invokeActivity?.SetStatus(ActivityStatusCode.Error, errorUpdate.Message);
                 throw new InvalidOperationException($"Stream error: {errorUpdate.Message}");
+            }
+        }
+
+        if (retrievalRan && !emittedAnnotations)
+        {
+            var fallbackAnnotations = BuildFallbackAnnotations(retrievedClauses);
+            if (fallbackAnnotations.Count > 0)
+            {
+                _logger.LogWarning(
+                    "No annotations emitted during retrieval-backed response. Emitting fallback citations (count={Count}).",
+                    fallbackAnnotations.Count);
+                invokeActivity?.AddEvent(new ActivityEvent("annotations.fallback_emitted"));
+                yield return StreamChunk.WithAnnotations(fallbackAnnotations);
+            }
+            else
+            {
+                invokeActivity?.SetStatus(ActivityStatusCode.Error, "Missing citations for retrieval-backed response");
+                throw new InvalidOperationException(
+                    "Citations are required for retrieval-backed responses, but no annotations or grounded clauses were available.");
             }
         }
 
@@ -512,6 +736,7 @@ public class AgentFrameworkService : IDisposable
         ResponseItem? item, 
         Dictionary<string, string>? fileSearchQuotes = null)
     {
+        using var activity = ActivitySource.StartActivity("extract_annotations", ActivityKind.Internal);
         var annotations = new List<AnnotationInfo>();
         
         if (item is not MessageResponseItem messageItem)
@@ -573,6 +798,86 @@ public class AgentFrameworkService : IDisposable
             }
         }
 
+        activity?.SetTag("app.annotations.count", annotations.Count);
+        return annotations;
+    }
+
+    private async Task<List<StandardSelection>> ResolveStandardsAsync(
+        List<StandardSelection>? standardsSelected,
+        CancellationToken cancellationToken)
+    {
+        if (standardsSelected != null && standardsSelected.Count > 0)
+        {
+            if (!_standardsRetrieval.IsConfigured)
+            {
+                throw new InvalidOperationException(
+                    $"Standards retrieval requires Azure AI Search configuration. {_standardsRetrieval.DisabledReason ?? "Missing AI_SEARCH_ENDPOINT/AI_SEARCH_INDEX configuration."}");
+            }
+
+            return standardsSelected;
+        }
+
+        if (!_standardsRetrieval.IsConfigured)
+        {
+            throw new InvalidOperationException(
+                $"Standards retrieval requires Azure AI Search configuration. {_standardsRetrieval.DisabledReason ?? "Missing AI_SEARCH_ENDPOINT/AI_SEARCH_INDEX configuration."}");
+        }
+
+        var catalog = await _standardsRetrieval.GetStandardsCatalogAsync(cancellationToken);
+        if (catalog.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "No standards were found in the standards index. Ensure the knowledge source is indexed and contains standards metadata.");
+        }
+
+        return catalog
+            .Select((standard, index) => new StandardSelection
+            {
+                StandardId = standard.StandardNumber,
+                Title = standard.StandardTitle,
+                Version = standard.PublicationDate,
+                Jurisdiction = standard.IssuingOrganization,
+                Priority = index + 1,
+                Mandatory = true
+            })
+            .ToList();
+    }
+
+    private static List<AnnotationInfo> BuildFallbackAnnotations(IReadOnlyList<GroundedClause> clauses)
+    {
+        var annotations = new List<AnnotationInfo>();
+        if (clauses.Count == 0)
+        {
+            return annotations;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var clause in clauses)
+        {
+            var baseLabel = string.IsNullOrWhiteSpace(clause.ClauseRef)
+                ? clause.StandardId
+                : $"{clause.StandardId} {clause.ClauseRef}";
+
+            var label = string.IsNullOrWhiteSpace(clause.SourceDoc)
+                ? baseLabel
+                : $"{baseLabel} • {clause.SourceDoc}";
+
+            var quote = clause.ClauseText;
+            var key = $"{label}|{quote}";
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            annotations.Add(new AnnotationInfo
+            {
+                Type = "file_citation",
+                Label = label,
+                Quote = quote
+            });
+        }
+
         return annotations;
     }
 
@@ -630,7 +935,7 @@ public class AgentFrameworkService : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         // Ensure agent is loaded via Agent Framework
-        var agent = await GetAgentAsync(cancellationToken);
+        var agent = (await GetAgentAsync(cancellationToken: cancellationToken)).Agent;
 
         if (_cachedMetadata != null)
             return _cachedMetadata;
@@ -654,7 +959,7 @@ public class AgentFrameworkService : IDisposable
 
         _cachedMetadata = new AgentMetadataResponse
         {
-            Id = _agentId,
+            Id = _defaultAgentId,
             Object = "agent",
             CreatedAt = agentVersion.CreatedAt.ToUnixTimeSeconds(),
             Name = agentVersion.Name ?? "AI Assistant",
@@ -708,9 +1013,151 @@ public class AgentFrameworkService : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var agent = await GetAgentAsync(cancellationToken);
+        var agent = (await GetAgentAsync(cancellationToken: cancellationToken)).Agent;
         var agentVersion = agent.GetService<AgentVersion>();
-        return agentVersion?.Name ?? _agentId;
+        return agentVersion?.Name ?? _defaultAgentId;
+    }
+
+    private string ResolveAgentId(AgentRoute route)
+    {
+        var configuredAgentId = route switch
+        {
+            AgentRoute.Air => _airAgentId,
+            AgentRoute.Eir => _eirAgentId,
+            AgentRoute.Bep => _bepAgentId,
+            _ => _defaultAgentId
+        };
+
+        if (!string.IsNullOrWhiteSpace(configuredAgentId))
+        {
+            return configuredAgentId;
+        }
+
+        if (route != AgentRoute.Default)
+        {
+            _logger.LogWarning(
+                "Route {Route} was selected but no dedicated agent id is configured. Falling back to default agent id {DefaultAgentId}.",
+                route,
+                _defaultAgentId);
+        }
+
+        return _defaultAgentId;
+    }
+
+    private RouteDecision DetermineAgentRoute(
+        string? agentRouteHint,
+        string message,
+        List<StandardSelection>? standardsSelected,
+        List<FileAttachment>? fileDataUris)
+    {
+        var explicitRoute = ParseExplicitRouteHint(agentRouteHint);
+        if (explicitRoute.HasValue)
+        {
+            return new RouteDecision(explicitRoute.Value, "explicit_hint");
+        }
+
+        var normalizedFileNames = (fileDataUris ?? [])
+            .Select(f => f.FileName)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n.Trim().ToLowerInvariant())
+            .ToList();
+
+        var hasAirFile = normalizedFileNames.Any(name => name.Contains("air", StringComparison.Ordinal));
+        var hasEirFile = normalizedFileNames.Any(name => name.Contains("eir", StringComparison.Ordinal));
+        var hasBepFile = normalizedFileNames.Any(name => name.Contains("bep", StringComparison.Ordinal));
+
+        if (hasBepFile && (hasAirFile || hasEirFile))
+        {
+            return new RouteDecision(AgentRoute.Bep, "filename_combo:bep+air_or_eir");
+        }
+
+        if (hasEirFile)
+        {
+            return new RouteDecision(AgentRoute.Eir, "filename:eir");
+        }
+
+        if (hasAirFile)
+        {
+            return new RouteDecision(AgentRoute.Air, "filename:air");
+        }
+
+        var selectedStandardIds = (standardsSelected ?? [])
+            .Select(s => s.StandardId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim().ToLowerInvariant())
+            .ToList();
+
+        var hasEirStandard = selectedStandardIds.Any(id => id.Contains("eir", StringComparison.Ordinal));
+        var hasAirStandard = selectedStandardIds.Any(id => id.Contains("air", StringComparison.Ordinal));
+
+        if (hasEirStandard)
+        {
+            return new RouteDecision(AgentRoute.Eir, "standards:eir");
+        }
+
+        if (hasAirStandard)
+        {
+            return new RouteDecision(AgentRoute.Air, "standards:air");
+        }
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            var normalizedMessage = message.ToLowerInvariant();
+            if (normalizedMessage.Contains("bep", StringComparison.Ordinal)
+                && (normalizedMessage.Contains("air", StringComparison.Ordinal)
+                    || normalizedMessage.Contains("eir", StringComparison.Ordinal)))
+            {
+                return new RouteDecision(AgentRoute.Bep, "message:bep+air_or_eir");
+            }
+
+            if (normalizedMessage.Contains("eir", StringComparison.Ordinal))
+            {
+                return new RouteDecision(AgentRoute.Eir, "message:eir");
+            }
+
+            if (normalizedMessage.Contains("air", StringComparison.Ordinal))
+            {
+                return new RouteDecision(AgentRoute.Air, "message:air");
+            }
+        }
+
+        return new RouteDecision(AgentRoute.Default, "fallback:default");
+    }
+
+    private static AgentRoute? ParseExplicitRouteHint(string? agentRouteHint)
+    {
+        if (string.IsNullOrWhiteSpace(agentRouteHint))
+        {
+            return null;
+        }
+
+        return agentRouteHint.Trim().ToLowerInvariant() switch
+        {
+            "air" => AgentRoute.Air,
+            "eir" => AgentRoute.Eir,
+            "bep" => AgentRoute.Bep,
+            _ => null
+        };
+    }
+
+    private enum AgentRoute
+    {
+        Default,
+        Air,
+        Eir,
+        Bep
+    }
+
+    private sealed record RouteDecision(AgentRoute Route, string Reason);
+
+    private static string BuildBepComparisonContextPrompt()
+    {
+        return "COMPARISON_CONTEXT\n\nYou are evaluating an uploaded BEP against uploaded AIR and EIR documents.\n- Prioritize direct cross-document consistency checks between BEP, AIR, and EIR.\n- Produce a complete structured report with score, findings, and remediation tasks.\n- Do not depend on standards retrieval unless explicitly provided in the conversation.";
+    }
+
+    private static string BuildNoStandardsFallbackPrompt()
+    {
+        return "STANDARDS_GROUNDING_NOTICE\n\nNo grounded standards clauses were retrieved for this request. Continue with document-only analysis and explicitly state that standards grounding was unavailable for this run.";
     }
 
     /// <summary>
@@ -727,5 +1174,86 @@ public class AgentFrameworkService : IDisposable
             _agentLock.Dispose();
             _logger.LogDebug("AgentFrameworkService disposed");
         }
+    }
+
+    private async Task<(ChatClientAgent Agent, string ReferenceName)> TryResolveAgentAsync(string configuredAgentId, CancellationToken cancellationToken)
+    {
+        var baseName = NormalizeAgentReferenceName(configuredAgentId);
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            throw new InvalidOperationException($"Configured AI_AGENT_ID '{configuredAgentId}' cannot be normalized to a valid agent name.");
+        }
+
+        try
+        {
+            // Always resolve by base name to avoid version suffix and invalid character issues.
+            var agent = await _projectClient.GetAIAgentAsync(
+                name: baseName,
+                cancellationToken: cancellationToken);
+
+            return (agent, baseName);
+        }
+        catch (Exception ex) when (ShouldFallbackToLatest(configuredAgentId, ex))
+        {
+            _logger.LogWarning(
+                ex,
+                "Configured agent version was not found for {ConfiguredAgentId}. Falling back to latest version of {BaseName}.",
+                configuredAgentId,
+                baseName);
+
+            var fallbackAgent = await _projectClient.GetAIAgentAsync(
+                name: baseName,
+                cancellationToken: cancellationToken);
+
+            return (fallbackAgent, baseName);
+        }
+    }
+
+    private static bool ShouldFallbackToLatest(string configuredAgentId, Exception ex)
+    {
+        if (!configuredAgentId.Contains(':'))
+        {
+            return false;
+        }
+
+        var message = ex.Message;
+        return message.Contains("with version not found", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("ServiceError: not_found", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("\"code\": \"not_found\"", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeAgentReferenceName(string configuredAgentId)
+    {
+        var baseName = configuredAgentId.Split(':', 2)[0].Trim();
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            return string.Empty;
+        }
+
+        var normalized = new StringBuilder(baseName.Length);
+        foreach (var ch in baseName)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '-')
+            {
+                normalized.Append(char.ToLowerInvariant(ch));
+            }
+            else
+            {
+                normalized.Append('-');
+            }
+        }
+
+        var collapsed = normalized.ToString().Trim('-');
+        while (collapsed.Contains("--", StringComparison.Ordinal))
+        {
+            collapsed = collapsed.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        if (collapsed.Length > 63)
+        {
+            collapsed = collapsed[..63].TrimEnd('-');
+        }
+
+        return collapsed;
     }
 }

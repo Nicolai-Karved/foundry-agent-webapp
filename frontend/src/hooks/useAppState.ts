@@ -31,6 +31,7 @@ export const useAppState = () => {
       auth: state.auth,
       chat: state.chat,
       ui: state.ui,
+      settings: state.settings,
       
       // Full state for components that need everything
       state,

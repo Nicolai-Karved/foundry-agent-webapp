@@ -20,7 +20,6 @@ interface IStarterMessageProps {
 
 // Default starter prompts when none are configured in Azure AI Foundry
 const defaultStarterPrompts = [
-  "Check the document for me.",
   "What are your capabilities?",
   "What standards do you support?",
 ];

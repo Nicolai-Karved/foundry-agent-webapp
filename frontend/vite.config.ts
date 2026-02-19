@@ -35,6 +35,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        "/v1/traces": {
+          target: "http://localhost:4318",
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   };

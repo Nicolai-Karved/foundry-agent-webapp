@@ -1,6 +1,8 @@
 import type { AccountInfo } from '@azure/msal-browser';
 import type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest } from './chat';
 import type { AppError } from './errors';
+import type { AgentRouteOverride, StandardSelection } from './standards';
+import { DEFAULT_SELECTED_STANDARDS } from '../config/standards';
 
 // Re-export types for convenience
 export type { IChatItem, IUsageInfo, IAnnotation, IMcpApprovalRequest };
@@ -30,6 +32,12 @@ export interface AppState {
   ui: {
     chatInputEnabled: boolean; // Disable during streaming/errors
   };
+
+  // Settings and preferences
+  settings: {
+    selectedStandards: StandardSelection[];
+    agentRouteOverride: AgentRouteOverride;
+  };
 }
 
 /**
@@ -46,7 +54,8 @@ export type AppAction =
   | { type: 'CHAT_START_STREAM'; conversationId?: string; messageId: string }
   | { type: 'CHAT_STREAM_CHUNK'; messageId: string; content: string }
   | { type: 'CHAT_SET_MESSAGE_CONTENT'; messageId: string; content: string }
-  | { type: 'CHAT_SET_MESSAGE_STRUCTURED'; messageId: string; content: string; structured: IChatItem['structured'] }
+  | { type: 'CHAT_SET_MESSAGE_AGENT'; messageId: string; agentName: string; agentRoute?: string }
+  | { type: 'CHAT_SET_MESSAGE_STRUCTURED'; messageId: string; content: string; structured: IChatItem['structured']; annotations?: IAnnotation[] }
   | { type: 'CHAT_STREAM_ANNOTATIONS'; messageId: string; annotations: IAnnotation[] }
   | { type: 'CHAT_MCP_APPROVAL_REQUEST'; messageId: string; approvalRequest: IMcpApprovalRequest; previousResponseId: string | null }
   | { type: 'CHAT_STREAM_COMPLETE'; usage: IUsageInfo }
@@ -54,7 +63,11 @@ export type AppAction =
   | { type: 'CHAT_ERROR'; error: AppError } // Enhanced error object
   | { type: 'CHAT_CLEAR_ERROR' } // Clear error state
   | { type: 'CHAT_CLEAR' }
-  | { type: 'CHAT_ADD_ASSISTANT_MESSAGE'; messageId: string };
+  | { type: 'CHAT_ADD_ASSISTANT_MESSAGE'; messageId: string }
+
+  // Settings actions
+  | { type: 'SET_STANDARDS_SELECTION'; selectedStandards: StandardSelection[] }
+  | { type: 'SET_AGENT_ROUTE_OVERRIDE'; agentRouteOverride: AgentRouteOverride };
 
 /**
  * Initial state for the application
@@ -74,5 +87,9 @@ export const initialAppState: AppState = {
   },
   ui: {
     chatInputEnabled: true,
+  },
+  settings: {
+    selectedStandards: DEFAULT_SELECTED_STANDARDS,
+    agentRouteOverride: 'auto',
   },
 };

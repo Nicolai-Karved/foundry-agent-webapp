@@ -42,6 +42,30 @@
   background: transparent;
 }
 
+.verifyButton {
+  position: absolute;
+  right: 52px;
+  top: 8px;
+  z-index: 2;
+  border: 1px solid var(--colorBrandStroke1) !important;
+  background: var(--colorBrandBackground2) !important;
+  color: var(--colorBrandForeground1) !important;
+}
+
+.verifyButton:hover:enabled {
+  background: var(--colorBrandBackground2Hover) !important;
+  color: var(--colorBrandForeground1) !important;
+}
+
+.verifyButton:active:enabled {
+  background: var(--colorBrandBackground2Pressed) !important;
+}
+
+.verifyButton:focus-visible {
+  outline: 2px solid var(--colorBrandStroke1);
+  outline-offset: 1px;
+}
+
 /* Style the built-in send button to match our subtle buttons */
 .inputWrapper :global(.fui-ChatInput) :global(button) {
   color: var(--colorNeutralForeground2);
@@ -129,4 +153,8 @@
 
 .cancelButton {
   margin-left: 0.25rem;
+}
+
+.hiddenFileInput {
+  display: none;
 }

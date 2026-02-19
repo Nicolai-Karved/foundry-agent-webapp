@@ -17,7 +17,11 @@
       "label": "Backend: ASP.NET Core API",
       "type": "shell",
       "command": "dotnet",
-      "args": ["watch", "run", "--no-hot-reload"],
+      "args": [
+        "watch",
+        "run",
+        "--no-hot-reload"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/backend/WebApp.Api"
       },
@@ -47,11 +51,16 @@
       "label": "Frontend: React Vite",
       "type": "shell",
       "command": "npm",
-      "args": ["run", "dev"],
+      "args": [
+        "run",
+        "dev"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },
-      "dependsOn": ["Install Frontend Dependencies"],
+      "dependsOn": [
+        "Install Frontend Dependencies"
+      ],
       "isBackground": true,
       "problemMatcher": {
         "pattern": {
@@ -76,7 +85,10 @@
     },
     {
       "label": "Start Dev (VS Code Terminals)",
-      "dependsOn": ["Backend: ASP.NET Core API", "Frontend: React Vite"],
+      "dependsOn": [
+        "Backend: ASP.NET Core API",
+        "Frontend: React Vite"
+      ],
       "dependsOrder": "parallel",
       "problemMatcher": [],
       "presentation": {
@@ -92,7 +104,10 @@
       "label": "Install Frontend Dependencies",
       "type": "shell",
       "command": "npm",
-      "args": ["install", "--legacy-peer-deps"],
+      "args": [
+        "install",
+        "--legacy-peer-deps"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },
@@ -102,6 +117,82 @@
         "panel": "shared",
         "showReuseMessage": false
       }
+    },
+    {
+      "label": "clean (functions)",
+      "command": "dotnet",
+      "args": [
+        "clean",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "type": "process",
+      "problemMatcher": "$msCompile",
+      "options": {
+        "cwd": "${workspaceFolder}/functions\\BimCuIngest"
+      }
+    },
+    {
+      "label": "build (functions)",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "type": "process",
+      "dependsOn": "clean (functions)",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile",
+      "options": {
+        "cwd": "${workspaceFolder}/functions\\BimCuIngest"
+      }
+    },
+    {
+      "label": "clean release (functions)",
+      "command": "dotnet",
+      "args": [
+        "clean",
+        "--configuration",
+        "Release",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "type": "process",
+      "problemMatcher": "$msCompile",
+      "options": {
+        "cwd": "${workspaceFolder}/functions\\BimCuIngest"
+      }
+    },
+    {
+      "label": "publish (functions)",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "--configuration",
+        "Release",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "type": "process",
+      "dependsOn": "clean release (functions)",
+      "problemMatcher": "$msCompile",
+      "options": {
+        "cwd": "${workspaceFolder}/functions\\BimCuIngest"
+      }
+    },
+    {
+      "type": "func",
+      "dependsOn": "build (functions)",
+      "options": {
+        "cwd": "${workspaceFolder}/functions\\BimCuIngest/bin/Debug/net8.0"
+      },
+      "command": "host start",
+      "isBackground": true,
+      "problemMatcher": "$func-dotnet-watch"
     }
   ]
 }

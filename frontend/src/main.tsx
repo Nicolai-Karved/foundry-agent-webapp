@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { PublicClientApplication, EventType } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";
+import "./telemetry/otel";
 import App from "./App";
 import { msalConfig } from "./config/authConfig";
 import "./index.css";

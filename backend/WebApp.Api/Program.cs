@@ -4,11 +4,21 @@ using WebApp.Api.Models;
 using WebApp.Api.Services;
 using System.Security.Claims;
 
-// Load .env file for local development BEFORE building the configuration
-// In production (Docker), Container Apps injects environment variables directly
-var envFilePath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
-if (File.Exists(envFilePath))
+// Load .env files for local development BEFORE building the configuration.
+// In production (Docker), Container Apps injects environment variables directly.
+// Supports both backend/WebApp.Api/.env and repository-root .env.
+var currentDir = Directory.GetCurrentDirectory();
+var envCandidates = new[]
 {
+    Path.Combine(currentDir, ".env"),
+    Path.GetFullPath(Path.Combine(currentDir, "..", "..", ".env"))
+};
+
+foreach (var envFilePath in envCandidates.Distinct(StringComparer.OrdinalIgnoreCase))
+{
+    if (!File.Exists(envFilePath))
+        continue;
+
     foreach (var line in File.ReadAllLines(envFilePath))
     {
         if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
@@ -17,8 +27,10 @@ if (File.Exists(envFilePath))
         var parts = line.Split('=', 2, StringSplitOptions.TrimEntries);
         if (parts.Length == 2)
         {
+            var rawValue = parts[1].Trim();
+            var value = rawValue.Trim('"').Trim('\'');
             // Set as environment variables so they're picked up by configuration system
-            Environment.SetEnvironmentVariable(parts[0], parts[1]);
+            Environment.SetEnvironmentVariable(parts[0], value);
         }
     }
 }
@@ -124,6 +136,8 @@ builder.Services.AddAuthorization(options =>
 // Register Azure AI Agent Service for Azure AI Foundry v2 Agents
 // Uses Azure.AI.Projects SDK which works with v2 Agents API (/agents/ endpoint with human-readable IDs).
 builder.Services.AddScoped<AgentFrameworkService>();
+builder.Services.AddSingleton<StandardsRetrievalService>();
+builder.Services.AddSingleton<StandardsPromptBuilder>();
 
 var app = builder.Build();
 
@@ -169,6 +183,88 @@ app.MapGet("/api/health", (HttpContext context) =>
 .RequireAuthorization(ScopePolicyName)
 .WithName("GetHealth");
 
+// Standards catalog endpoint: returns selectable standards from Azure AI Search index content
+app.MapGet("/api/standards", async (
+    StandardsRetrievalService standardsService,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var standards = await standardsService.GetStandardsCatalogAsync(cancellationToken);
+
+        var payload = standards.Select((s, index) => new
+        {
+            standardId = s.StandardNumber,
+            title = s.StandardTitle,
+            version = s.PublicationDate,
+            jurisdiction = s.IssuingOrganization,
+            publicationDate = s.PublicationDate,
+            issuingOrganization = s.IssuingOrganization,
+            priority = index + 1,
+            mandatory = true
+        });
+
+        return Results.Ok(payload);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(
+            ex,
+            500,
+            environment.IsDevelopment());
+
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions);
+    }
+})
+.WithName("GetStandardsCatalog");
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapGet("/api/standards/debug", async (
+        StandardsRetrievalService standardsService,
+        CancellationToken cancellationToken) =>
+    {
+        var diagnostics = await standardsService.GetCatalogDiagnosticsAsync(cancellationToken);
+        return Results.Ok(diagnostics);
+    })
+    .WithName("GetStandardsCatalogDebug");
+
+    app.MapGet("/api/standards/debug-clauses", async (
+        StandardsRetrievalService standardsService,
+        string standardId,
+        string? q,
+        CancellationToken cancellationToken) =>
+    {
+        if (string.IsNullOrWhiteSpace(standardId))
+        {
+            return Results.BadRequest(new { message = "standardId is required" });
+        }
+
+        var clauses = await standardsService.RetrieveClausesAsync(
+            q ?? "*",
+            new List<StandardSelection>
+            {
+                new() { StandardId = standardId, Priority = 1, Mandatory = true }
+            },
+            null,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            standardId,
+            query = q ?? "*",
+            count = clauses.Count,
+            sample = clauses.Take(3)
+        });
+    })
+    .WithName("GetStandardsClausesDebug");
+}
+
 // Streaming Chat endpoint: Streams agent response via SSE (conversationId → chunks → usage → done)
 // Supports MCP tool approval flow with previousResponseId and mcpApproval parameters
 app.MapPost("/api/chat/stream", async (
@@ -198,6 +294,10 @@ app.MapPost("/api/chat/stream", async (
             request.FileDataUris,
             request.PreviousResponseId,
             request.McpApproval,
+            request.StandardsSelected,
+            request.Policy,
+            request.Retrieval,
+            request.AgentRouteHint,
             cancellationToken))
         {
             if (chunk.IsText && chunk.TextDelta != null)
@@ -211,6 +311,17 @@ app.MapPost("/api/chat/stream", async (
             else if (chunk.IsMcpApprovalRequest && chunk.McpApprovalRequest != null)
             {
                 await WriteMcpApprovalRequestEvent(httpContext.Response, chunk.McpApprovalRequest, cancellationToken);
+            }
+            else if (chunk.HasAgentInfo && chunk.Agent != null)
+            {
+                try
+                {
+                    await WriteAgentInfoEvent(httpContext.Response, chunk.Agent, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[WARN] Failed to write agent info event: {ex.Message}");
+                }
             }
         }
 
@@ -236,11 +347,20 @@ app.MapPost("/api/chat/stream", async (
         
         await WriteErrorEvent(
             httpContext.Response, 
+            "BAD_REQUEST",
             errorResponse.Detail ?? errorResponse.Title, 
             cancellationToken);
     }
     catch (Exception ex)
     {
+        var streamErrorCode = ex.Message.Contains("No standards clauses were retrieved", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("No requirements were retrieved", StringComparison.OrdinalIgnoreCase)
+            ? "STANDARDS_EMPTY"
+            : ex.Message.Contains("token", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+                ? "AUTH_REQUIRED"
+                : "STREAM_FAILURE";
+
         var errorResponse = ErrorResponseFactory.CreateFromException(
             ex, 
             500, 
@@ -248,6 +368,7 @@ app.MapPost("/api/chat/stream", async (
         
         await WriteErrorEvent(
             httpContext.Response, 
+            streamErrorCode,
             errorResponse.Detail ?? errorResponse.Title, 
             cancellationToken);
     }
@@ -301,7 +422,23 @@ static async Task WriteMcpApprovalRequestEvent(HttpResponse response, WebApp.Api
             id = approval.Id,
             toolName = approval.ToolName,
             serverLabel = approval.ServerLabel,
-            arguments = approval.Arguments
+            arguments = approval.Arguments,
+            previousResponseId = approval.ResponseId
+        }
+    });
+    await response.WriteAsync($"data: {json}\n\n", ct);
+    await response.Body.FlushAsync(ct);
+}
+
+static async Task WriteAgentInfoEvent(HttpResponse response, WebApp.Api.Models.AgentInfo agent, CancellationToken ct)
+{
+    var json = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        type = "agent",
+        agent = new
+        {
+            name = agent.Name,
+            route = agent.Route
         }
     });
     await response.WriteAsync($"data: {json}\n\n", ct);
@@ -328,9 +465,9 @@ static async Task WriteDoneEvent(HttpResponse response, CancellationToken ct)
     await response.Body.FlushAsync(ct);
 }
 
-static async Task WriteErrorEvent(HttpResponse response, string message, CancellationToken ct)
+static async Task WriteErrorEvent(HttpResponse response, string code, string message, CancellationToken ct)
 {
-    var json = System.Text.Json.JsonSerializer.Serialize(new { type = "error", message });
+    var json = System.Text.Json.JsonSerializer.Serialize(new { type = "error", code, message });
     await response.WriteAsync($"data: {json}\n\n", ct);
     await response.Body.FlushAsync(ct);
 }

@@ -20,6 +20,11 @@ public record StreamChunk
     /// MCP tool approval request. Null if this chunk contains text or annotations.
     /// </summary>
     public McpApprovalRequest? McpApprovalRequest { get; init; }
+
+    /// <summary>
+    /// Active agent information for this response stream.
+    /// </summary>
+    public AgentInfo? Agent { get; init; }
     
     /// <summary>
     /// Creates a text delta chunk.
@@ -35,6 +40,18 @@ public record StreamChunk
     /// Creates an MCP approval request chunk.
     /// </summary>
     public static StreamChunk McpApproval(McpApprovalRequest request) => new() { McpApprovalRequest = request };
+
+    /// <summary>
+    /// Creates an active agent info chunk.
+    /// </summary>
+    public static StreamChunk AgentInfo(string agentName, string route) => new()
+    {
+        Agent = new AgentInfo
+        {
+            Name = agentName,
+            Route = route
+        }
+    };
     
     /// <summary>
     /// Whether this chunk contains text content.
@@ -50,6 +67,17 @@ public record StreamChunk
     /// Whether this chunk contains an MCP approval request.
     /// </summary>
     public bool IsMcpApprovalRequest => McpApprovalRequest != null;
+
+    /// <summary>
+    /// Whether this chunk contains active agent info.
+    /// </summary>
+    public bool HasAgentInfo => Agent != null;
+}
+
+public record AgentInfo
+{
+    public required string Name { get; init; }
+    public required string Route { get; init; }
 }
 
 /// <summary>
@@ -61,4 +89,5 @@ public record McpApprovalRequest
     public required string ToolName { get; init; }
     public required string ServerLabel { get; init; }
     public string? Arguments { get; init; }
+    public string? ResponseId { get; init; }
 }

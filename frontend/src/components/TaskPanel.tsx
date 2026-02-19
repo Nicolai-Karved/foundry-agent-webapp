@@ -114,9 +114,10 @@ const getSeverity = (task: StructuredTask): string => {
 
 const getSeverityClass = (severity: string) => {
   const normalized = severity.toLowerCase();
-  if (normalized === 'high') return styles.severityHigh;
-  if (normalized === 'medium') return styles.severityMedium;
-  if (normalized === 'low') return styles.severityLow;
+  if (normalized === 'critical' || normalized === 'high') return styles.severityCritical;
+  if (normalized === 'major' || normalized === 'medium') return styles.severityMajor;
+  if (normalized === 'minor' || normalized === 'low') return styles.severityMinor;
+  if (normalized === 'info' || normalized === 'informational') return styles.severityInfo;
   return styles.severityNeutral;
 };
 
@@ -156,7 +157,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             }
           }}
           className={`${styles.taskCard} ${isSelected ? styles.taskCardActive : ''}`}
-          onClick={() => onSelectTask?.(task, getReference(task), getDocumentReference(task), severity)}
+          onClick={() => onSelectTask?.(task, getDocumentReference(task), getReference(task), severity)}
         >
           <div className={styles.taskHeader}>
             <span className={styles.taskName}>{name}</span>

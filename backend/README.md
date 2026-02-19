@@ -129,6 +129,7 @@ dotnet list package --vulnerable
 |-------|----------|
 | 401 Unauthorized | Verify token has `Chat.ReadWrite` scope |
 | AI Foundry connection fails | Check `AI_AGENT_ENDPOINT` in `.env` |
+| PermissionDenied for agents/write | Assign **Azure AI User** role on the Foundry resource or project to your Azure CLI user | 
 | Local auth fails | Run `az login` or `azd auth login` |
 | Port 8089 in use | Change in `launchSettings.json` |
 

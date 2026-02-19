@@ -38,6 +38,7 @@ This is handled automatically by `predeploy.ps1`.
 | `azd up` | Full provision + deploy | Initial setup, infrastructure changes |
 | `azd deploy` | Code-only deployment | Fast iteration on code changes |
 | `azd down` | Tear down resources | Cleanup |
+| `\.\deployment\scripts\ingest-docs-to-search.ps1` | Upload PDFs, wait for JSONL, run indexer | Local ingestion testing |
 
 ## Hook Workflow
 

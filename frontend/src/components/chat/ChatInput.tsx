@@ -123,6 +123,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     onCancelStream?.();
   };
 
+  const handleVerifyDocument = () => {
+    if (disabled || isStreaming || selectedFiles.length === 0) return;
+    onSubmit('Verify the document', selectedFiles);
+    setInputText('');
+    setSelectedFiles([]);
+    controlRef.current?.setInputText('');
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     
@@ -257,6 +265,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         >
           <ImperativeControlPlugin ref={controlRef} />
         </ChatInputFluent>
+        {selectedFiles.length > 0 && (
+          <Button
+            appearance="secondary"
+            size="small"
+            className={styles.verifyButton}
+            onClick={handleVerifyDocument}
+            disabled={disabled || isStreaming}
+            aria-label="Verify the document"
+            title="Verify the document"
+          >
+            Verify
+          </Button>
+        )}
         {showCounter && (
           <div className={counterStyles.container} id={charCounterId}>
             <Text className={`${counterStyles.text} ${getCounterStyle()}`}>
@@ -304,9 +325,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       </div>
       <input
         ref={fileInputRef}
+        className={styles.hiddenFileInput}
         type="file"
         multiple
-        style={{ display: 'none' }}
+        aria-label="Attach files"
         onChange={handleFileSelect}
         accept="image/*,.pdf,.txt,.md,.csv,.json,.html,.xml"
       />

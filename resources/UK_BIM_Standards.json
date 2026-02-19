@@ -1,0 +1,282 @@
+{
+	"analyzerId": "UK_BIM_Standards",
+	"description": "",
+	"createdAt": "2026-02-11T11:33:32Z",
+	"lastModifiedAt": "2026-02-11T11:33:32Z",
+	"baseAnalyzerId": "prebuilt-document",
+	"config": {
+		"returnDetails": true,
+		"enableOcr": true,
+		"enableLayout": true,
+		"enableFormula": true,
+		"enableFigureDescription": true,
+		"enableFigureAnalysis": true,
+		"chartFormat": "chartjs",
+		"tableFormat": "html",
+		"estimateFieldSourceAndConfidence": true,
+		"enableSegment": false,
+		"omitContent": false,
+		"segmentPerPage": false,
+		"annotationFormat": "markdown"
+	},
+	"warnings": [],
+	"status": "ready",
+	"processingLocation": "geography",
+	"supportedModels": {
+		"completion": [
+			"gpt-4o",
+			"gpt-4o-mini",
+			"gpt-4.1",
+			"gpt-4.1-mini",
+			"gpt-4.1-nano"
+		],
+		"embedding": [
+			"text-embedding-3-small",
+			"text-embedding-3-large",
+			"text-embedding-ada-002"
+		]
+	},
+	"models": {
+		"completion": "gpt-4.1",
+		"embedding": "text-embedding-3-large"
+	},
+	"fieldSchema": {
+		"fields": {
+			"StandardNumber": {
+				"type": "string",
+				"method": "extract",
+				"description": "The official identifier for this standard as published by BSI, CEN, or ISO, used for reference and citation in regulatory and contractual contexts"
+			},
+			"StandardTitle": {
+				"type": "string",
+				"method": "extract",
+				"description": "The full official title of the standard, describing its scope and subject matter as it appears on the cover or title page"
+			},
+			"PublicationDate": {
+				"type": "date",
+				"method": "extract",
+				"description": "The date on which this edition of the standard was officially published and made available by the issuing standards body"
+			},
+			"IssuingOrganization": {
+				"type": "string",
+				"method": "extract",
+				"description": "The main organization responsible for the publication and maintenance of the standard, which may be a national or international standards body"
+			},
+			"TechnicalCommittee": {
+				"type": "string",
+				"method": "extract",
+				"description": "The technical committee or working group responsible for the preparation and approval of the standard, providing subject matter expertise"
+			},
+			"ApprovalDate": {
+				"type": "date",
+				"method": "extract",
+				"description": "The date on which the standard was formally approved by the relevant European or international committee"
+			},
+			"ISBN": {
+				"type": "string",
+				"method": "extract",
+				"description": "The International Standard Book Number assigned to this publication for identification and cataloguing purposes"
+			},
+			"ICS": {
+				"type": "string",
+				"method": "extract",
+				"description": "The International Classification for Standards code(s) assigned to this document, indicating its subject area within the global standards system"
+			},
+			"NationalImplementation": {
+				"type": "string",
+				"method": "extract",
+				"description": "The status or method by which this European or international standard is adopted as a national standard in the United Kingdom or other countries"
+			},
+			"CopyrightHolder": {
+				"type": "string",
+				"method": "extract",
+				"description": "The entity holding copyright for the standard, responsible for its distribution and licensing"
+			},
+			"CopyrightYear": {
+				"type": "string",
+				"method": "extract",
+				"description": "The year in which copyright for this edition of the standard is held"
+			},
+			"CommitteeRepresentation": {
+				"type": "string",
+				"method": "extract",
+				"description": "A description of the organizations or stakeholders represented on the technical committee responsible for the standard"
+			},
+			"NationalAnnexReference": {
+				"type": "string",
+				"method": "extract",
+				"description": "Reference to any national annex or supplementary guidance provided to assist users in applying the standard within a specific country"
+			},
+			"AmendmentsOrCorrigenda": {
+				"type": "string",
+				"method": "extract",
+				"description": "Information about any amendments or corrigenda issued since the original publication, including dates and affected text"
+			},
+			"ProjectInformationRequirements": {
+				"type": "string",
+				"method": "extract",
+				"description": "Defines the appointing party's requirements for information to support decision-making at key project milestones during the delivery phase"
+			},
+			"InformationDeliveryMilestones": {
+				"type": "string",
+				"method": "extract",
+				"description": "Scheduled events or dates for predefined information exchanges, aligned with the project's plan of work and decision points"
+			},
+			"InformationStandard": {
+				"type": "string",
+				"method": "extract",
+				"description": "Specification of standards for structuring, classifying, and exchanging information within the project, including organizational and external requirements"
+			},
+			"InformationProductionMethodsAndProcedures": {
+				"type": "string",
+				"method": "extract",
+				"description": "Documented methods and procedures for capturing, generating, reviewing, approving, securing, and distributing project information"
+			},
+			"ReferenceInformationAndSharedResources": {
+				"type": "string",
+				"method": "extract",
+				"description": "Reference data and shared resources (such as templates, libraries, and existing asset information) provided to project teams to support information production and exchange"
+			},
+			"CommonDataEnvironment": {
+				"type": "string",
+				"method": "extract",
+				"description": "The project's digital environment for managing, sharing, and controlling access to information containers, including unique identification, status, revision, and classification attributes"
+			},
+			"InformationProtocol": {
+				"type": "string",
+				"method": "extract",
+				"description": "Project-specific protocol outlining obligations, intellectual property rights, licensing, and procedures for information management and use"
+			},
+			"ExchangeInformationRequirements": {
+				"type": "string",
+				"method": "extract",
+				"description": "Detailed requirements for information exchanges to be met by the lead appointed party and appointed parties during the appointment"
+			},
+			"AcceptanceCriteria": {
+				"type": "string",
+				"method": "extract",
+				"description": "Evidence or standards required to consider that information requirements have been fulfilled for project deliverables"
+			},
+			"BIMExecutionPlan": {
+				"type": "string",
+				"method": "extract",
+				"description": "Plan explaining how the delivery team will manage information, including strategy, objectives, team structure, and proposed methods for BIM execution"
+			},
+			"ResponsibilityMatrix": {
+				"type": "string",
+				"method": "extract",
+				"description": "Matrix identifying responsibilities for information production, exchange, and review among project participants and task teams"
+			},
+			"TaskInformationDeliveryPlans": {
+				"type": "string",
+				"method": "extract",
+				"description": "Schedules maintained by each task team listing information containers, production durations, authors, and delivery milestones"
+			},
+			"MasterInformationDeliveryPlan": {
+				"type": "string",
+				"method": "extract",
+				"description": "Aggregated plan combining all task information delivery plans, showing deliverables, dependencies, and review timelines for the delivery team"
+			},
+			"MobilizationPlan": {
+				"type": "string",
+				"method": "extract",
+				"description": "Plan detailing the approach, timescales, and responsibilities for mobilizing resources, IT, and training to support information management"
+			},
+			"RiskRegister": {
+				"type": "string",
+				"method": "extract",
+				"description": "Register of risks associated with timely information delivery and strategies for managing these risks throughout the project"
+			},
+			"ProjectCloseOutArchive": {
+				"type": "string",
+				"method": "extract",
+				"description": "Process and requirements for archiving the completed project information model and containers in accordance with retention policies"
+			},
+			"LessonsLearned": {
+				"type": "string",
+				"method": "extract",
+				"description": "Captured knowledge and insights from the project, recorded for use in future projects to improve information management practices"
+			},
+			"AppointingParty": {
+				"type": "string",
+				"method": "extract",
+				"description": "Organization or individual responsible for initiating the project, defining information requirements, and appointing delivery teams"
+			},
+			"LeadAppointedParty": {
+				"type": "string",
+				"method": "extract",
+				"description": "Party appointed by the appointing party to lead the delivery team and coordinate information management activities"
+			},
+			"AppointedParty": {
+				"type": "string",
+				"method": "extract",
+				"description": "Party appointed by the lead appointed party to deliver specific tasks and produce required information"
+			},
+			"ProjectTeam": {
+				"type": "string",
+				"method": "extract",
+				"description": "Collective group comprising the appointing party and all delivery teams involved in the project"
+			},
+			"TaskTeam": {
+				"type": "string",
+				"method": "extract",
+				"description": "Subgroup within the delivery team responsible for producing and managing specific information deliverables"
+			},
+			"Project": {
+				"type": "string",
+				"method": "extract",
+				"description": "A unique project identifier assigned at project initiation, distinct from any organization's internal job number, and fixed within the project information standard"
+			},
+			"Originator": {
+				"type": "string",
+				"method": "extract",
+				"description": "A unique identifier for the organization responsible for producing the information within the container, assigned upon joining the project and fixed within the project information standard"
+			},
+			"VolumeSystem": {
+				"type": "string",
+				"method": "extract",
+				"description": "A unique identifier for each volume or system, fixed within the project information standard; standard codes include 'ZZ' for all volumes/systems and 'XX' for none"
+			},
+			"LevelLocation": {
+				"type": "string",
+				"method": "extract",
+				"description": "A unique identifier for each level or location, fixed within the project information standard; standard codes include 'ZZ', 'XX', '00', '01', 'M1', 'B1', etc."
+			},
+			"Type": {
+				"type": "string",
+				"method": "extract",
+				"description": "A unique identifier for the type of information held within the container, such as drawing, report, model, or specification, fixed within the project information standard"
+			},
+			"Role": {
+				"type": "string",
+				"method": "extract",
+				"description": "A unique identifier for the role assigned to an organization on the project, such as architect, contractor, or engineer, fixed within the project information standard"
+			},
+			"Number": {
+				"type": "string",
+				"method": "extract",
+				"description": "A sequential number assigned to each information container when it is one of a series, typically four to six digits with leading zeros as needed"
+			},
+			"Suitability": {
+				"type": "string",
+				"method": "extract",
+				"description": "A code indicating the status or suitability of the information container, such as work in progress, shared, published, or as-constructed record, according to the codification table"
+			},
+			"Revision": {
+				"type": "string",
+				"method": "extract",
+				"description": "A code indicating the revision of the information container, using preliminary (e.g., P01.01) or contractual (e.g., C01) formats as specified in the project information standard"
+			},
+			"Classification": {
+				"type": "string",
+				"method": "extract",
+				"description": "A classification code for the information within the container, in accordance with Uniclass 2015 or ISO 12006-2:2018"
+			},
+			"Delimiter": {
+				"type": "string",
+				"method": "extract",
+				"description": "The character used to separate fields in the information container ID, typically the hyphen-minus (Unicode U+002D)"
+			}
+		}
+	}
+}

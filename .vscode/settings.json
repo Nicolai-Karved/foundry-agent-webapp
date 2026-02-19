@@ -97,5 +97,11 @@
   "[markdown]": {
     "editor.defaultFormatter": null,
     "editor.formatOnSave": false
-  }
+  },
+  "azureFunctions.projectSubpath": "functions\\BimCuIngest",
+  "azureFunctions.deploySubpath": "functions\\BimCuIngest/bin/Release/net8.0/publish",
+  "azureFunctions.projectLanguage": "C#",
+  "azureFunctions.projectRuntime": "~4",
+  "debug.internalConsoleOptions": "neverOpen",
+  "azureFunctions.preDeployTask": "publish (functions)"
 }

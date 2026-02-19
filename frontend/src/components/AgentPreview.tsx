@@ -7,6 +7,8 @@ import { useAppState } from '../hooks/useAppState';
 import { useAuth } from '../hooks/useAuth';
 import { ChatService } from '../services/chatService';
 import { useAppContext } from '../contexts/AppContext';
+import { DocumentStandardsPanel } from './core/DocumentStandardsPanel';
+import { RoutingModePanel } from './core/RoutingModePanel';
 import styles from './AgentPreview.module.css';
 
 interface AgentPreviewProps {
@@ -18,7 +20,7 @@ interface AgentPreviewProps {
 }
 
 export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, agentName, agentDescription, agentLogo, starterPrompts }) => {
-  const { chat } = useAppState();
+  const { chat, settings } = useAppState();
   const { dispatch } = useAppContext();
   const { getAccessToken } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -74,7 +76,13 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
   };
 
   const handleSendMessage = async (text: string, files?: File[]) => {
-    await chatService.sendMessage(text, chat.currentConversationId, files);
+    await chatService.sendMessage(
+      text,
+      chat.currentConversationId,
+      files,
+      settings.selectedStandards,
+      settings.agentRouteOverride
+    );
   };
 
   const handleClearError = () => {
@@ -168,13 +176,15 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
       }}
     >
       <aside className={styles.documentPanel}>
-        <div className={styles.documentPanelScroll}>
-          <DocumentViewer
-            attachments={latestAttachments}
-            highlightText={highlightText}
-            highlightFallbackText={highlightFallbackText}
-            highlightSeverity={highlightSeverity}
-          />
+        <div className={styles.documentPanelInner}>
+          <div className={styles.documentPanelScroll}>
+            <DocumentViewer
+              attachments={latestAttachments}
+              highlightText={highlightText}
+              highlightFallbackText={highlightFallbackText}
+              highlightSeverity={highlightSeverity}
+            />
+          </div>
         </div>
       </aside>
 
@@ -212,14 +222,18 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
       </div>
 
       <aside className={styles.taskPanel}>
-        <div className={styles.taskPanelScroll}>
-          <TaskPanel
-            tasks={latestStructured?.tasks ?? []}
-            title="Tasks"
-            subtitle={latestStructured?.documentName}
-            selectedTaskId={selectedTaskId}
-            onSelectTask={handleTaskSelect}
-          />
+        <div className={styles.taskPanelInner}>
+          <div className={styles.taskPanelScroll}>
+            <RoutingModePanel />
+            <DocumentStandardsPanel collapseWhenViewingDocument={Boolean(latestAttachments && latestAttachments.length > 0)} />
+            <TaskPanel
+              tasks={latestStructured?.tasks ?? []}
+              title="Tasks"
+              subtitle={latestStructured?.documentName}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={handleTaskSelect}
+            />
+          </div>
         </div>
       </aside>
       

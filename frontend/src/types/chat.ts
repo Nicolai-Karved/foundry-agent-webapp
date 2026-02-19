@@ -10,6 +10,8 @@ export interface IChatItem {
   more?: {
     time?: string; // ISO timestamp
     usage?: IUsageInfo; // Usage info from backend
+    agentName?: string; // Active routed agent name used for this response
+    agentRoute?: string; // Resolved route (auto/air/eir/bep)
   };
 }
 
@@ -62,6 +64,8 @@ export interface IAnnotation {
   endIndex?: number;
   /** Quote from the source document (for file citations) */
   quote?: string;
+  /** Standard number for standards-based citations (e.g., ISO 19650-1) */
+  standardNumber?: string;
 }
 
 // Agent metadata types

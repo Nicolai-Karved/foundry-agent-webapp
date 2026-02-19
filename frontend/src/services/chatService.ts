@@ -1,7 +1,10 @@
 import type { Dispatch } from 'react';
+import { SpanStatusCode, trace } from '@opentelemetry/api';
+import { appTracer, tracingContext } from '../telemetry/otel';
 import type { AppAction } from '../types/appState';
-import type { IChatItem, IStructuredResponse } from '../types/chat';
+import type { IAnnotation, IChatItem, IStructuredResponse } from '../types/chat';
 import type { AppError } from '../types/errors';
+import type { AgentRouteOverride, StandardSelection } from '../types/standards';
 import { isAppError } from '../types/errors';
 import {
   createAppError,
@@ -44,6 +47,33 @@ export class ChatService {
   private currentStreamAbort?: AbortController;
   // Flag indicating an intentional user cancellation of the active stream.
   private streamCancelled = false;
+
+  private static toError(value: unknown): Error {
+    if (value instanceof Error) {
+      return value;
+    }
+
+    return new Error(typeof value === 'string' ? value : JSON.stringify(value));
+  }
+
+  private createStreamAppError(code: string | undefined, message: string): AppError {
+    const normalized = (code ?? '').toUpperCase();
+
+    if (normalized === 'AUTH_REQUIRED') {
+      return createAppError(new Error(message), 'AUTH');
+    }
+
+    if (normalized === 'STANDARDS_EMPTY') {
+      return {
+        code: 'STREAM',
+        message,
+        recoverable: true,
+        originalError: new Error(message),
+      };
+    }
+
+    return createAppError(new Error(message), 'STREAM');
+  }
 
   constructor(
     apiUrl: string,
@@ -131,14 +161,66 @@ export class ChatService {
     message: string,
     conversationId: string | null,
     imageDataUris: string[],
-    fileDataUris: Array<{ dataUri: string; fileName: string; mimeType: string }>
+    fileDataUris: Array<{ dataUri: string; fileName: string; mimeType: string }>,
+    standardsSelected?: StandardSelection[],
+    agentRouteHint?: 'air' | 'eir' | 'bep'
   ): Record<string, any> {
     return {
       message,
       conversationId,
       imageDataUris: imageDataUris.length > 0 ? imageDataUris : undefined,
       fileDataUris: fileDataUris.length > 0 ? fileDataUris : undefined,
+      standardsSelected: standardsSelected && standardsSelected.length > 0 ? standardsSelected : undefined,
+      agentRouteHint,
     };
+  }
+
+  private detectAgentRouteHint(
+    files?: File[],
+    standardsSelected?: StandardSelection[]
+  ): 'air' | 'eir' | 'bep' | undefined {
+    const normalizedNames = (files ?? []).map((f) => f.name.toLowerCase());
+
+    const hasAirFile = normalizedNames.some((name) => name.includes('air'));
+    const hasEirFile = normalizedNames.some((name) => name.includes('eir'));
+    const hasBepFile = normalizedNames.some((name) => name.includes('bep'));
+
+    if (hasBepFile && hasAirFile && hasEirFile) {
+      return 'bep';
+    }
+
+    if (hasEirFile) {
+      return 'eir';
+    }
+
+    if (hasAirFile) {
+      return 'air';
+    }
+
+    const standardIds = (standardsSelected ?? [])
+      .map((s) => s.standardId.toLowerCase());
+
+    if (standardIds.some((id) => id.includes('eir'))) {
+      return 'eir';
+    }
+
+    if (standardIds.some((id) => id.includes('air'))) {
+      return 'air';
+    }
+
+    return undefined;
+  }
+
+  private resolveAgentRouteHint(
+    routeOverride: AgentRouteOverride | undefined,
+    files?: File[],
+    standardsSelected?: StandardSelection[]
+  ): 'air' | 'eir' | 'bep' | undefined {
+    if (routeOverride && routeOverride !== 'auto') {
+      return routeOverride;
+    }
+
+    return this.detectAgentRouteHint(files, standardsSelected);
   }
 
   /**
@@ -193,20 +275,32 @@ export class ChatService {
   async sendMessage(
     messageText: string,
     currentConversationId: string | null,
-    files?: File[]
+    files?: File[],
+    standardsSelected?: StandardSelection[],
+    routeOverride?: AgentRouteOverride
   ): Promise<void> {
-    if (this.currentStreamAbort) {
-      this.streamCancelled = true;
-      this.currentStreamAbort.abort();
-      this.dispatch({ type: 'CHAT_CANCEL_STREAM' });
-    }
+    const span = appTracer.startSpan('chat.send', {
+      attributes: {
+        'app.message.length': messageText.length,
+        'app.attachments.count': files?.length ?? 0,
+        'app.standards.count': standardsSelected?.length ?? 0,
+        'app.conversation.has_id': Boolean(currentConversationId),
+      },
+    });
 
-    try {
-      const token = await this.ensureAuthToken();
-      const { content, imageDataUris, fileDataUris, attachments } = await this.prepareMessagePayload(
-        messageText,
-        files
-      );
+    return tracingContext.with(trace.setSpan(tracingContext.active(), span), async () => {
+      if (this.currentStreamAbort) {
+        this.streamCancelled = true;
+        this.currentStreamAbort.abort();
+        this.dispatch({ type: 'CHAT_CANCEL_STREAM' });
+      }
+
+      try {
+        const token = await this.ensureAuthToken();
+        const { content, imageDataUris, fileDataUris, attachments } = await this.prepareMessagePayload(
+          messageText,
+          files
+        );
 
       const userMessage: IChatItem = {
         id: Date.now().toString(),
@@ -235,7 +329,9 @@ export class ChatService {
         messageText,
         currentConversationId,
         imageDataUris,
-        fileDataUris
+        fileDataUris,
+        standardsSelected,
+        this.resolveAgentRouteHint(routeOverride, files, standardsSelected)
       );
 
       const response = await retryWithBackoff(
@@ -250,29 +346,37 @@ export class ChatService {
         1000
       );
 
-      await this.processStream(response, assistantMessageId, currentConversationId);
-      this.currentStreamAbort = undefined;
-      this.streamCancelled = false;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
+        await this.processStream(response, assistantMessageId, currentConversationId);
+        this.currentStreamAbort = undefined;
+        this.streamCancelled = false;
+        span.setStatus({ code: SpanStatusCode.OK });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          span.addEvent('stream.aborted');
+          span.setStatus({ code: SpanStatusCode.UNSET });
+          return;
+        }
+
+        if (isTokenExpiredError(error)) {
+          this.dispatch({ type: 'AUTH_TOKEN_EXPIRED' });
+        }
+
+        const appError: AppError = isAppError(error)
+          ? error
+          : createAppError(
+              error,
+              getErrorCodeFromMessage(error),
+              () => this.sendMessage(messageText, currentConversationId, files, standardsSelected, routeOverride)
+            );
+
+        span.recordException(ChatService.toError(error));
+        span.setStatus({ code: SpanStatusCode.ERROR });
+        this.dispatch({ type: 'CHAT_ERROR', error: appError });
+        throw error;
+      } finally {
+        span.end();
       }
-
-      if (isTokenExpiredError(error)) {
-        this.dispatch({ type: 'AUTH_TOKEN_EXPIRED' });
-      }
-
-      const appError: AppError = isAppError(error)
-        ? error
-        : createAppError(
-            error,
-            getErrorCodeFromMessage(error),
-            () => this.sendMessage(messageText, currentConversationId, files)
-          );
-
-      this.dispatch({ type: 'CHAT_ERROR', error: appError });
-      throw error;
-    }
+    });
   }
 
   /**
@@ -289,6 +393,13 @@ export class ChatService {
     messageId: string,
     currentConversationId: string | null
   ): Promise<void> {
+    const span = appTracer.startSpan('chat.stream', {
+      attributes: {
+        'app.message.id': messageId,
+        'app.conversation.has_id': Boolean(currentConversationId),
+      },
+    });
+
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
 
@@ -298,6 +409,8 @@ export class ChatService {
         'STREAM'
       );
       this.dispatch({ type: 'CHAT_ERROR', error });
+      span.recordException(ChatService.toError(error));
+      span.setStatus({ code: SpanStatusCode.ERROR });
       throw error;
     }
 
@@ -307,6 +420,8 @@ export class ChatService {
     let structuredBuffer = '';
     let structuredMode = false;
     let placeholderSet = false;
+    const collectedAnnotations: IAnnotation[] = [];
+    const autoApproveMcp = true;
 
     const setPlaceholder = () => {
       if (placeholderSet) return;
@@ -326,6 +441,7 @@ export class ChatService {
           messageId,
           content: structured.response,
           structured,
+          annotations: collectedAnnotations.length > 0 ? collectedAnnotations : undefined,
         });
         return;
       }
@@ -360,18 +476,47 @@ export class ChatService {
 
           if (event.data?.error) {
             console.error('[ChatService] SSE error event received:', event.data.error);
-            const error = createAppError(
-              new Error(event.data.error.message || event.data.error || 'Stream error occurred'),
-              'STREAM'
-            );
+            const errorMessage = event.data.error.message || event.data.error || 'Stream error occurred';
+            const errorCode = typeof event.data.error.code === 'string' ? event.data.error.code : undefined;
+            const error = this.createStreamAppError(errorCode, errorMessage);
+            if (error.code === 'AUTH') {
+              this.dispatch({ type: 'AUTH_TOKEN_EXPIRED' });
+            }
             this.dispatch({ type: 'CHAT_ERROR', error });
             throw error;
           }
 
+          if (event.type === 'annotations') {
+            if (event.data.annotations && event.data.annotations.length > 0) {
+              collectedAnnotations.push(...event.data.annotations);
+              span.addEvent('annotations.received', {
+                'app.annotations.count': event.data.annotations.length,
+              });
+              this.dispatch({
+                type: 'CHAT_STREAM_ANNOTATIONS',
+                messageId,
+                annotations: event.data.annotations,
+              });
+            }
+            continue;
+          }
+
           switch (event.type) {
+            case 'agent':
+              if (event.data.agent && typeof event.data.agent.name === 'string') {
+                this.dispatch({
+                  type: 'CHAT_SET_MESSAGE_AGENT',
+                  messageId,
+                  agentName: event.data.agent.name,
+                  agentRoute: typeof event.data.agent.route === 'string' ? event.data.agent.route : undefined,
+                });
+              }
+              break;
+
             case 'conversationId':
               if (!newConversationId) {
                 newConversationId = event.data.conversationId;
+                span.addEvent('conversation.id.received');
                 this.dispatch({
                   type: 'CHAT_START_STREAM',
                   conversationId: event.data.conversationId,
@@ -404,28 +549,44 @@ export class ChatService {
               }
               break;
 
-            case 'annotations':
-              if (event.data.annotations && event.data.annotations.length > 0) {
-                this.dispatch({
-                  type: 'CHAT_STREAM_ANNOTATIONS',
-                  messageId,
-                  annotations: event.data.annotations,
-                });
-              }
-              break;
-
             case 'mcpApprovalRequest':
               if (event.data.approvalRequest) {
+                span.addEvent('mcp.approval.requested');
+                if (autoApproveMcp) {
+                  const approval = event.data.approvalRequest;
+                  if (!approval.previousResponseId) {
+                    throw createAppError(
+                      new Error('MCP approval responseId missing; cannot auto-approve'),
+                      'STREAM'
+                    );
+                  }
+                  const conversationId = newConversationId ?? currentConversationId;
+                  if (!conversationId) {
+                    throw createAppError(
+                      new Error('MCP approval conversationId missing; cannot auto-approve'),
+                      'STREAM'
+                    );
+                  }
+                  await this.sendMcpApproval(
+                    approval.id,
+                    true,
+                    approval.previousResponseId,
+                    conversationId
+                  );
+                  return;
+                }
+
                 this.dispatch({
                   type: 'CHAT_MCP_APPROVAL_REQUEST',
                   messageId,
                   approvalRequest: event.data.approvalRequest,
-                  previousResponseId: newConversationId,
+                  previousResponseId: event.data.approvalRequest.previousResponseId ?? null,
                 });
               }
               break;
 
             case 'usage':
+              span.addEvent('stream.usage');
               this.dispatch({
                 type: 'CHAT_STREAM_COMPLETE',
                 usage: {
@@ -438,23 +599,27 @@ export class ChatService {
               break;
 
             case 'done':
-              if (structuredMode) {
+              if (structuredBuffer.trim().length > 0) {
                 finalizeStructured();
               }
+              span.setStatus({ code: SpanStatusCode.OK });
               return;
 
             case 'error':
-              const error = createAppError(
-                new Error(`Stream error for message ${messageId}: ${event.data.message}`),
-                'STREAM'
-              );
+              const errorMessage = `Stream error for message ${messageId}: ${event.data.message}`;
+              const error = this.createStreamAppError(event.data.code, errorMessage);
+              if (error.code === 'AUTH') {
+                this.dispatch({ type: 'AUTH_TOKEN_EXPIRED' });
+              }
               this.dispatch({ type: 'CHAT_ERROR', error });
+              span.recordException(ChatService.toError(error));
+              span.setStatus({ code: SpanStatusCode.ERROR });
               throw error;
           }
         }
       }
 
-      if (structuredMode) {
+      if (structuredBuffer.trim().length > 0) {
         finalizeStructured();
       }
     } catch (error) {
@@ -473,6 +638,8 @@ export class ChatService {
               'STREAM'
             );
       this.dispatch({ type: 'CHAT_ERROR', error: appError as AppError });
+      span.recordException(ChatService.toError(error));
+      span.setStatus({ code: SpanStatusCode.ERROR });
       throw error;
     } finally {
       try {
@@ -480,6 +647,7 @@ export class ChatService {
       } catch {
         // Reader may already be released
       }
+      span.end();
     }
   }
 
@@ -548,6 +716,13 @@ export class ChatService {
     previousResponseId: string,
     conversationId: string
   ): Promise<void> {
+    const span = appTracer.startSpan('chat.mcp_approval', {
+      attributes: {
+        'app.mcp.approved': approved,
+        'app.conversation.id_present': Boolean(conversationId),
+      },
+    });
+
     try {
       const token = await this.ensureAuthToken();
 
@@ -587,8 +762,11 @@ export class ChatService {
       await this.processStream(response, assistantMessageId, conversationId);
       this.currentStreamAbort = undefined;
       this.streamCancelled = false;
+      span.setStatus({ code: SpanStatusCode.OK });
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        span.addEvent('stream.aborted');
+        span.setStatus({ code: SpanStatusCode.UNSET });
         return;
       }
 
@@ -597,7 +775,11 @@ export class ChatService {
         : createAppError(error, getErrorCodeFromMessage(error));
 
       this.dispatch({ type: 'CHAT_ERROR', error: appError });
+      span.recordException(ChatService.toError(error));
+      span.setStatus({ code: SpanStatusCode.ERROR });
       throw error;
+    } finally {
+      span.end();
     }
   }
 
@@ -624,9 +806,12 @@ export class ChatService {
    */
   cancelStream(): void {
     if (this.currentStreamAbort) {
+      const span = appTracer.startSpan('chat.cancel');
+      span.addEvent('stream.cancel.requested');
       this.streamCancelled = true;
       this.currentStreamAbort.abort();
       this.dispatch({ type: 'CHAT_CANCEL_STREAM' });
+      span.end();
     }
   }
 }

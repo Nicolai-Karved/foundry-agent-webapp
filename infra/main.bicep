@@ -25,6 +25,33 @@ param entraTenantId string = tenant().tenantId
 @description('Container image for web service (set by postprovision hook)')
 param webImageName string = 'mcr.microsoft.com/k8se/quickstart:latest'  // Placeholder during initial provision
 
+@description('Name of the storage account that hosts the BIM documents')
+param documentsStorageAccountName string = ''
+
+@description('Content Understanding endpoint for analyzer calls')
+param cuEndpoint string = ''
+
+@description('Content Understanding analyzer ID')
+param cuAnalyzerId string = 'UK_BIM_Standards'
+
+@description('Container name for source documents')
+param cuInputContainer string = 'bim-standards'
+
+@description('Prefix for source documents within the container')
+param cuInputPrefix string = 'source/'
+
+@description('Prefix for analyzer output within the container')
+param cuOutputPrefix string = 'cu-output/'
+
+@description('Analyze path template (must include {analyzerId})')
+param cuAnalyzePath string = 'contentunderstanding/analyzers/{analyzerId}:analyze?api-version=2025-11-01'
+
+@description('Polling interval in seconds for analyzer results')
+param cuPollIntervalSeconds int = 2
+
+@description('Function App name (optional)')
+param functionAppName string = ''
+
 @description('Default tags applied by Azure Policy (optional)')
 param defaultTags object = {}
 
@@ -72,6 +99,25 @@ module app 'main-app.bicep' = {
   }
 }
 
+module functionApp 'main-function.bicep' = {
+  name: 'cu-ingest-function'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    resourceToken: resourceToken
+    functionAppName: functionAppName
+    documentsStorageAccountName: documentsStorageAccountName
+    cuEndpoint: cuEndpoint
+    cuAnalyzerId: cuAnalyzerId
+    cuInputContainer: cuInputContainer
+    cuInputPrefix: cuInputPrefix
+    cuOutputPrefix: cuOutputPrefix
+    cuAnalyzePath: cuAnalyzePath
+    cuPollIntervalSeconds: cuPollIntervalSeconds
+  }
+}
+
 // Note: Role assignment to AI Foundry resource is done via Azure CLI in postprovision.ps1
 // This avoids azd tracking the external resource group and deleting it on 'azd down'
 
@@ -82,3 +128,6 @@ output AZURE_RESOURCE_GROUP_NAME string = rg.name
 output AZURE_CONTAINER_APP_NAME string = app.outputs.webAppName
 output WEB_ENDPOINT string = app.outputs.webEndpoint
 output WEB_IDENTITY_PRINCIPAL_ID string = app.outputs.webIdentityPrincipalId
+output FUNCTION_APP_NAME string = functionApp.outputs.functionAppName
+output FUNCTION_IDENTITY_PRINCIPAL_ID string = functionApp.outputs.functionIdentityPrincipalId
+output FUNCTION_STORAGE_ACCOUNT_NAME string = functionApp.outputs.functionStorageAccountName

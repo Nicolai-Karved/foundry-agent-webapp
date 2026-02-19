@@ -137,6 +137,11 @@ azd env set AI_FOUNDRY_RESOURCE_NAME <resource-name>
 azd provision  # Updates RBAC for new resource
 ```
 
+**Local dev RBAC (required for streaming)**:
+- Your signed-in Azure CLI user must have the **Azure AI User** role on the Foundry resource or project scope.
+- Without it, the backend will return 401 PermissionDenied for `agents/write` calls.
+- See: https://aka.ms/FoundryPermissions
+
 **List and switch agents** (requires prior `azd up`):
 ```powershell
 # List all agents in configured project
@@ -206,6 +211,7 @@ For tracking feature updates, see issue [#14](https://github.com/microsoft-found
 | `azd up` | Initial deployment (infra + code) | 10-12 min |
 | `azd deploy` | Deploy code changes only | 3-5 min |
 | `.\deployment\scripts\start-local-dev.ps1` | Start local development | Instant |
+| `.\deployment\scripts\ingest-docs-to-search.ps1` | Upload PDFs, wait for JSONL, run indexer | Varies |
 | `.\deployment\scripts\list-agents.ps1` | List agents in your project | Instant |
 | `azd provision` | Re-deploy infrastructure / update RBAC | 2-3 min |
 | `azd down --force --purge` | Delete all Azure resources | 2-3 min |

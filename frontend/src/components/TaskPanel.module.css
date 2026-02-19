@@ -94,22 +94,28 @@
   letter-spacing: 0.02em;
 }
 
-.severityHigh {
+.severityCritical {
   background-color: var(--colorPaletteRedBackground2);
   color: var(--colorPaletteRedForeground1);
   border-color: var(--colorPaletteRedBorder1);
 }
 
-.severityMedium {
+.severityMajor {
+  background-color: var(--colorPaletteDarkOrangeBackground2);
+  color: var(--colorPaletteDarkOrangeForeground2);
+  border-color: var(--colorPaletteDarkOrangeBorder1);
+}
+
+.severityMinor {
   background-color: var(--colorPaletteYellowBackground2);
   color: var(--colorPaletteYellowForeground2);
   border-color: var(--colorPaletteYellowBorder1);
 }
 
-.severityLow {
-  background-color: var(--colorPaletteGreenBackground2);
-  color: var(--colorPaletteGreenForeground2);
-  border-color: var(--colorPaletteGreenBorder1);
+.severityInfo {
+  background-color: var(--colorPaletteBlueBackground2);
+  color: var(--colorPaletteBlueForeground2);
+  border-color: var(--colorPaletteBlueBorder1);
 }
 
 .severityNeutral {
