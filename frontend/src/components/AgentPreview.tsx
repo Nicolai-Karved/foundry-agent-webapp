@@ -233,6 +233,14 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
               selectedTaskId={selectedTaskId}
               onSelectTask={handleTaskSelect}
             />
+            {latestStructured?.clarificationTasks && latestStructured.clarificationTasks.length > 0 && (
+              <TaskPanel
+                tasks={latestStructured.clarificationTasks}
+                title="Clarification questions"
+                selectedTaskId={selectedTaskId}
+                onSelectTask={handleTaskSelect}
+              />
+            )}
           </div>
         </div>
       </aside>

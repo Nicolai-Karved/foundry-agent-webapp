@@ -6,12 +6,12 @@ using System.Security.Claims;
 
 // Load .env files for local development BEFORE building the configuration.
 // In production (Docker), Container Apps injects environment variables directly.
-// Supports both backend/WebApp.Api/.env and repository-root .env.
+// Supports both repository-root .env (defaults) and backend/WebApp.Api/.env (local overrides).
 var currentDir = Directory.GetCurrentDirectory();
 var envCandidates = new[]
 {
-    Path.Combine(currentDir, ".env"),
-    Path.GetFullPath(Path.Combine(currentDir, "..", "..", ".env"))
+    Path.GetFullPath(Path.Combine(currentDir, "..", "..", ".env")),
+    Path.Combine(currentDir, ".env")
 };
 
 foreach (var envFilePath in envCandidates.Distinct(StringComparer.OrdinalIgnoreCase))

@@ -205,7 +205,7 @@ public class AgentFrameworkService : IDisposable
         invokeActivity?.SetTag("app.has_mcp_approval", mcpApproval != null);
 
         var routeDecision = DetermineAgentRoute(agentRouteHint, message, standardsSelected, fileDataUris);
-        var selectedAgentId = ResolveAgentId(routeDecision.Route);
+        var selectedAgentId = ResolveAgentId(routeDecision);
         var isBepComparisonRoute = routeDecision.Route == AgentRoute.Bep;
 
         // Ensure agent can be resolved before starting streaming and use the resolved name/reference.
@@ -292,10 +292,12 @@ public class AgentFrameworkService : IDisposable
 
                 if (effectiveStandards.Count > 0)
                 {
+                    var effectivePolicy = BuildEffectivePolicyForRoute(policy, routeDecision.Route);
+
                     using (var policyActivity = ActivitySource.StartActivity("build_policy_prompt", ActivityKind.Internal))
                     {
                         policyActivity?.SetTag("app.standards.count", effectiveStandards.Count);
-                        var policyPrompt = _promptBuilder.BuildPolicyPrompt(policy, effectiveStandards);
+                        var policyPrompt = _promptBuilder.BuildPolicyPrompt(effectivePolicy, effectiveStandards);
                         options.InputItems.Add(ResponseItem.CreateUserMessageItem(policyPrompt));
                     }
 
@@ -1018,9 +1020,9 @@ public class AgentFrameworkService : IDisposable
         return agentVersion?.Name ?? _defaultAgentId;
     }
 
-    private string ResolveAgentId(AgentRoute route)
+    private string ResolveAgentId(RouteDecision routeDecision)
     {
-        var configuredAgentId = route switch
+        var configuredAgentId = routeDecision.Route switch
         {
             AgentRoute.Air => _airAgentId,
             AgentRoute.Eir => _eirAgentId,
@@ -1033,15 +1035,55 @@ public class AgentFrameworkService : IDisposable
             return configuredAgentId;
         }
 
-        if (route != AgentRoute.Default)
+        var isForcedRoute = string.Equals(routeDecision.Reason, "explicit_hint", StringComparison.OrdinalIgnoreCase);
+        if (routeDecision.Route == AgentRoute.Default)
+        {
+            return _defaultAgentId;
+        }
+
+        if (isForcedRoute)
+        {
+            var missingSetting = routeDecision.Route switch
+            {
+                AgentRoute.Air => "AI_AGENT_ID_AIR",
+                AgentRoute.Eir => "AI_AGENT_ID_EIR",
+                AgentRoute.Bep => "AI_AGENT_ID_BEP",
+                _ => "AI_AGENT_ID"
+            };
+
+            throw new InvalidOperationException(
+                $"Routing mode is forced to '{routeDecision.Route}', but required configuration '{missingSetting}' is missing or empty.");
+        }
+
+        if (routeDecision.Route != AgentRoute.Default)
         {
             _logger.LogWarning(
                 "Route {Route} was selected but no dedicated agent id is configured. Falling back to default agent id {DefaultAgentId}.",
-                route,
+                routeDecision.Route,
                 _defaultAgentId);
         }
 
         return _defaultAgentId;
+    }
+
+    private static PolicyConfig? BuildEffectivePolicyForRoute(PolicyConfig? policy, AgentRoute route)
+    {
+        var routedDocType = route switch
+        {
+            AgentRoute.Air => "AIR",
+            AgentRoute.Eir => "EIR",
+            AgentRoute.Bep => "BEP",
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(routedDocType))
+        {
+            return policy;
+        }
+
+        return policy is null
+            ? new PolicyConfig { DocType = routedDocType }
+            : policy with { DocType = routedDocType };
     }
 
     private RouteDecision DetermineAgentRoute(

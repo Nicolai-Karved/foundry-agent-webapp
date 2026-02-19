@@ -439,7 +439,7 @@ export class ChatService {
         this.dispatch({
           type: 'CHAT_SET_MESSAGE_STRUCTURED',
           messageId,
-          content: structured.response,
+          content: this.stripInternalRunMetadata(structured.response),
           structured,
           annotations: collectedAnnotations.length > 0 ? collectedAnnotations : undefined,
         });
@@ -450,7 +450,7 @@ export class ChatService {
         this.dispatch({
           type: 'CHAT_SET_MESSAGE_CONTENT',
           messageId,
-          content: structuredBuffer,
+          content: this.stripInternalRunMetadata(structuredBuffer),
         });
       }
     };
@@ -693,13 +693,82 @@ export class ChatService {
       ? parsed.tasks.filter((task) => task && typeof task === 'object') as Array<Record<string, unknown>>
       : [];
 
+    const clarificationTasks = tasks.filter((task) => this.isClarificationTask(task));
+    const actionableTasks = tasks.filter((task) => !this.isClarificationTask(task));
+
     return {
-      response,
-      tasks,
+      response: this.stripInternalRunMetadata(response),
+      tasks: actionableTasks,
+      clarificationTasks: clarificationTasks.length > 0 ? clarificationTasks : undefined,
       documentName: typeof parsed.document_name === 'string' ? parsed.document_name : undefined,
       documentId: typeof parsed.id === 'string' ? parsed.id : undefined,
       raw: parsed,
     };
+  }
+
+  private isClarificationTask(task: Record<string, unknown>): boolean {
+    const categoryValue = this.getTaskText(task, ['task_type', 'type', 'category']);
+    if (categoryValue && /(clarification|question|follow[\s-]?up|missing_information|info_request)/i.test(categoryValue)) {
+      return true;
+    }
+
+    const name = this.getTaskText(task, ['name']) ?? '';
+    const description = this.getTaskText(task, ['description']) ?? '';
+    const combined = `${name} ${description}`.trim();
+
+    return /(clarification|clarify|question|confirm|please provide|required to obtain clause text)/i.test(combined);
+  }
+
+  private getTaskText(task: Record<string, unknown>, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = task[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private stripInternalRunMetadata(content: string): string {
+    if (!content.trim()) {
+      return content;
+    }
+
+    const lines = content.split(/\r?\n/);
+    const output: string[] = [];
+    let skippingRunMetadataBlock = false;
+
+    for (const line of lines) {
+      const trimmedLower = line.trim().toLowerCase();
+
+      if (!skippingRunMetadataBlock && (trimmedLower === 'run metadata' || trimmedLower.startsWith('run metadata:'))) {
+        skippingRunMetadataBlock = true;
+        continue;
+      }
+
+      if (skippingRunMetadataBlock) {
+        const isListLine = line.trimStart().startsWith('-') || line.trimStart().startsWith('*');
+        const isBlankLine = line.trim().length === 0;
+        const isSectionStart = /^\s*(\d+[\.)]|#{1,6}\s)/.test(line);
+
+        if (isListLine || isBlankLine) {
+          continue;
+        }
+
+        if (isSectionStart) {
+          skippingRunMetadataBlock = false;
+          output.push(line);
+          continue;
+        }
+
+        skippingRunMetadataBlock = false;
+      }
+
+      output.push(line);
+    }
+
+    return output.join('\n').trim();
   }
 
   /**

@@ -75,7 +75,7 @@ const getTaskId = (task: StructuredTask, index: number) => {
   return `task-${index}`;
 };
 
-const getReference = (task: StructuredTask): string | undefined => {
+const getReference = (task: StructuredTask): string | string[] | undefined => {
   if (!task || typeof task !== 'object') return undefined;
   const taskObject = task as Record<string, unknown>;
   if (typeof taskObject.reference === 'string') return taskObject.reference;
@@ -128,7 +128,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   selectedTaskId,
   onSelectTask,
 }) => {
-  const taskRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const taskRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   useEffect(() => {
     if (!selectedTaskId) return;

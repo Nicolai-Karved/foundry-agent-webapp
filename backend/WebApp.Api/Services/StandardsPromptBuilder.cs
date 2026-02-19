@@ -23,8 +23,6 @@ public class StandardsPromptBuilder
         var criticalFailsImmediate = policyConfig?.CriticalFailsImmediate ?? defaults.CriticalFailsImmediate;
         var maxMajorBeforeFail = policyConfig?.MaxMajorBeforeFail ?? defaults.MaxMajorBeforeFail;
         var scoringNotes = policyConfig?.ScoringNotes ?? defaults.ScoringNotes;
-        var runId = policyConfig?.RunId ?? Guid.NewGuid().ToString();
-
         var sortedStandards = standards
             .OrderBy(s => s.Priority)
             .ThenBy(s => s.StandardId)
@@ -65,14 +63,12 @@ public class StandardsPromptBuilder
         sb.AppendLine();
         sb.AppendLine("Output requirements:");
         sb.AppendLine("- response must include:");
-        sb.AppendLine("  1) Clarification Questions (as tasks)");
+        sb.AppendLine("  1) Clarification Questions (separate section, not part of tasks array)");
         sb.AppendLine("  2) Compliance Score (with calculation notes)");
         sb.AppendLine("  3) Structured List of Non-Compliant/Missing Topics");
         sb.AppendLine("- every finding must include citations grounded in the clauses below");
         sb.AppendLine("- populate citation_document_name and citation fields for each task");
-        sb.AppendLine();
-        sb.AppendLine("Run metadata:");
-        sb.AppendLine($"- run_id = \"{runId}\"");
+        sb.AppendLine("- do NOT render run metadata (e.g., run_id, internal diagnostics) in user-facing output");
 
         if (!string.IsNullOrWhiteSpace(policyConfig?.ProjectProfile ?? defaults.ProjectProfile))
         {
@@ -130,6 +126,7 @@ public class StandardsPromptBuilder
         sb.AppendLine("  - NoEvidence: only when no relevant evidence is found at all.");
         sb.AppendLine("- Evidence must quote exact source text when available; use \"N/A\" only when truly no evidence exists.");
         sb.AppendLine("- Output MUST be valid JSON only (no markdown). Use the schema below.");
+        sb.AppendLine("- The tasks array must only contain actionable compliance tasks (no run metadata tasks). Clarification questions belong in response text only.");
         sb.AppendLine();
         sb.AppendLine("Required JSON schema:");
         sb.AppendLine("{");

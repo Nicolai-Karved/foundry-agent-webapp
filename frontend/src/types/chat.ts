@@ -41,6 +41,7 @@ export type StructuredTask = Record<string, unknown>;
 export interface IStructuredResponse {
   response: string;
   tasks: StructuredTask[];
+  clarificationTasks?: StructuredTask[];
   documentName?: string;
   documentId?: string;
   raw?: Record<string, unknown>;
