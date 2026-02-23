@@ -109,7 +109,7 @@ dotnet list package --vulnerable
 | Package | Version | Purpose |
 |---------|---------|---------|
 | Azure.AI.Projects | 1.2.0-beta.5 | AI Foundry v2 Agents API SDK |
-| Microsoft.Agents.AI.AzureAI | 1.0.0-preview.260108.1 | Agent Framework (simplified agent loading) |
+| Microsoft.Agents.AI.AzureAI | 1.0.0-rc1 | Agent Framework (simplified agent loading) |
 | Azure.Identity | 1.17.1 | ManagedIdentityCredential for Azure auth |
 | Microsoft.Identity.Web | 4.3.0 | JWT Bearer authentication |
 

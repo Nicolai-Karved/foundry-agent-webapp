@@ -18,6 +18,34 @@ dotnet build Source/Naviate.Revit.<App>.sln -c Debug
 
 ## Testing Protocol
 
+### Phase 0: Unit Testing (All Layers)
+
+**Objective**: Verify each architectural layer is covered by automated unit tests before manual Revit validation.
+
+1. **Methods Layer Tests**
+   - [ ] Core methods have deterministic unit tests
+   - [ ] Edge cases and guard clauses are covered
+
+2. **Classes Layer Tests**
+   - [ ] Class behavior is tested independently
+   - [ ] Constructor and argument validation paths are covered
+
+3. **Services Layer Tests**
+   - [ ] Business rules are tested with mocked dependencies
+   - [ ] Revit-operation orchestration logic is tested without UI dependencies
+
+4. **Commands Layer Tests**
+   - [ ] Command execution flow is tested
+   - [ ] Validation, cancellation, and failure paths are covered
+
+5. **UI ViewModel Layer Tests**
+   - [ ] ViewModel state transitions are verified
+   - [ ] Prism command bindings and outcomes are tested
+
+6. **Coverage Gate**
+   - [ ] Every impacted layer from this change set has updated or added unit tests
+   - [ ] Unit tests pass before proceeding to manual Revit testing
+
 ### Phase 1: Startup Testing
 
 **Objective**: Verify add-in loads without hanging or errors
@@ -46,7 +74,7 @@ dotnet build Source/Naviate.Revit.<App>.sln -c Debug
 **If startup test fails**:
 - Check startup logs for exceptions
 - Review `OnStartup()` timing
-- Use revit-startup skill to diagnose hangs
+- Use `references/startup-performance.md` to diagnose hangs
 
 ### Phase 2: UI Testing
 
@@ -81,7 +109,7 @@ dotnet build Source/Naviate.Revit.<App>.sln -c Debug
 **If UI test fails**:
 - Check UI logs for binding errors
 - Verify ViewModel properties are correct
-- Check Prism registration (use revit-ui-prism skill)
+- Check Prism registration and view wiring using `references/ui-development.md`
 
 ### Phase 3: Tool/Feature Testing
 
@@ -110,7 +138,7 @@ dotnet build Source/Naviate.Revit.<App>.sln -c Debug
 
 **If tool test fails**:
 - Check tool logs for exceptions
-- Verify transaction wrapping (use revit-tool-safety skill)
+- Verify transaction wrapping and API-context safety using `references/tool-safety.md`
 - Test with simpler model/scenario
 
 ## Debugging Techniques
@@ -146,6 +174,7 @@ explorer %TEMP%
 ## Regression Testing Checklist
 
 After any code change, verify:
+- [ ] Unit tests pass for all impacted layers (Phase 0)
 - [ ] Startup still works (Phase 1)
 - [ ] UI still opens/renders (Phase 2)
 - [ ] Core features still work (Phase 3)

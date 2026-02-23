@@ -4,6 +4,12 @@ Use this skill when implementing or modifying Revit tools that read/write model 
 
 ## Safe Tool Implementation Procedure
 
+### 0. Revit API Context Validation
+
+- Execute Revit API calls only in a valid Revit API context on the main thread.
+- For modeless UI flows, marshal API work through approved mechanisms (for example, `ExternalEvent`).
+- Never mutate Revit documents from background threads.
+
 ### 1. Parameter Validation
 ```csharp
 public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
@@ -57,6 +63,7 @@ if (result != TaskDialogResult.Yes)
 
 ## Implementation Checklist
 - [ ] Validate all parameters before Revit API calls
+- [ ] Execute API operations in valid main-thread/API context
 - [ ] Wrap write operations in transactions
 - [ ] Implement rollback on failure
 - [ ] Confirm destructive operations with user

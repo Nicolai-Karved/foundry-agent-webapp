@@ -13,7 +13,19 @@ Use this skill when setting up a new Revit add-in project or verifying project c
 ### Testability Setup
 1. Define interfaces for services that interact with Revit API
 2. Use dependency injection for testable architecture
-3. Keep business logic separate from Revit API calls where possible
+3. Keep business logic separate from Revit API calls
+4. Keep UI free of business rules and Revit model manipulation
+
+## Bottom-Up Architecture Order
+
+Implement features in this hierarchy:
+1. Methods
+2. Classes
+3. Services
+4. Commands
+5. UI
+
+This order ensures reusable logic and predictable composition.
 
 
 ---
@@ -43,7 +55,7 @@ Use this skill when you need to find where specific code should live or understa
 - **UI** (`Naviate.Revit.<App>.UI`)
   - WPF views and view models
   - Prism modules
-  - UI-specific logic
+  - UI composition and interaction only
   
 - **Resources**
   - .addin manifests

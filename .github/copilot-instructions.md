@@ -61,6 +61,9 @@ Adopt the following operating principles for all tasks in this workspace. These 
 7. **Explicit Deviation Documentation**  
    Clearly document any deviations from existing patterns, architecture, or workflow.
 
+8. **Always code and document in English**
+   Never introduce new code or comments in a language other than English.     
+
 ### B. Agent Planning and Autonomy
 
 1. **Planning First**  
@@ -126,6 +129,7 @@ Use these phrases to help Copilot select the right skill when relevant:
 - **copilot-cli-workflows**: Copilot CLI, terminal workflows, delegation, headless automation
 - **mcp-integration-consumer**: MCP tools, tool integration, scope tool access, external tools
 - **continuous-ai-agentic-ci**: agentic CI, natural-language rules, safe outputs, reviewable automation
+- **revit-winforms-to-wpf-mvvm-prism-ref**: convert WinForms to WPF, migrate Revit dialog to Prism, move logic out of WinForms, modernize Revit UI to MVVM
 
 Notes:
 - This list is non-exhaustive; check .github/skills for the full catalog.

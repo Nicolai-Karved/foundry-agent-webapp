@@ -22,6 +22,7 @@ This document explains how the three layers of Revit customization work together
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 3: SKILLS (Automatic On-Demand)                      │
 │  • revit-development-ref                                    │
+│  • revit-winforms-to-wpf-mvvm-prism-ref                    │
 │  • .github/skills/revit-development-ref/                    │
 │  Detailed procedures loaded automatically when relevant     │
 └─────────────────────────────────────────────────────────────┘
@@ -77,8 +78,11 @@ This document explains how the three layers of Revit customization work together
 - ✅ Executable commands (dotnet build, debugging, package management)
 - ✅ Critical performance rules (startup < 2 seconds, no HTTP during OnStartup)
 - ✅ Transaction safety patterns and code examples
+- ✅ Main-thread Revit API context safety guidance
+- ✅ Service-oriented architecture boundaries (UI-agnostic logic)
+- ✅ Bottom-up implementation order (Methods → Classes → Services → Commands → UI)
 - ✅ Testing checklists and boundaries (Always/Ask/Never)
-- ✅ Reference to revit-development-ref skill for detailed procedures
+- ✅ References to `revit-development-ref` and `revit-winforms-to-wpf-mvvm-prism-ref` for detailed procedures
 
 **When to use:**
 - Starting Revit add-in development work
@@ -121,6 +125,15 @@ revit-development-ref/
     ├── startup-performance.md      # Startup optimization, hang fixes
     ├── tool-safety.md              # Transaction patterns, validation
     └── testing-validation.md       # Testing protocols, debugging
+
+revit-winforms-to-wpf-mvvm-prism-ref/
+├── SKILL.md                        # Migration index and trigger rules
+└── references/
+   ├── migration-playbook.md       # End-to-end migration sequence
+   ├── winforms-to-prism-mapping.md # Pattern mapping guide
+   ├── service-boundary-rules.md   # UI/logic separation rules
+   ├── threading-and-external-event.md # Main-thread and ExternalEvent safety
+   └── validation-checklist.md     # Migration quality gates
 ```
 
 **How it works:**
@@ -148,6 +161,12 @@ revit-development-ref/
    - Agent explains where the command file should go (main project)
    - Agent reminds you to validate parameters
 3. **Skills (Layer 3):** Copilot automatically loads `tool-safety.md` for detailed transaction patterns
+
+### Scenario 4: Migrating Legacy WinForms Dialogs
+
+1. **Instructions (Layer 1):** C# rules and global architecture priorities remain active
+2. **Agent (Layer 2):** `@RevitDevelopment` enforces WPF/MVVM/Prism for new/updated UI and service boundaries
+3. **Skills (Layer 3):** Copilot loads `revit-winforms-to-wpf-mvvm-prism-ref` and asks for layout file/image; if unavailable, migration proceeds with a WinForms-aligned layout fallback
 
 ### Scenario 2: Fixing a Startup Hang
 

@@ -12,10 +12,11 @@ This reference provides comprehensive procedures for:
 - Project setup and solution navigation
 - Build and deployment configuration
 - NuGet package management with centralized versioning
-- WPF/Prism UI development
+- WPF/MVVM/Prism UI development for new and updated tools
 - Startup performance optimization and hang diagnosis
-- Safe Revit operations with transactions
+- Safe Revit operations with transactions and main-thread API context
 - Systematic testing and validation
+- Service-oriented boundaries with bottom-up implementation order
 
 ## Content Map
 
@@ -52,6 +53,9 @@ Read only what you need based on the task at hand:
 - [ ] Startup time < 5 seconds
 - [ ] No blocking calls in `OnStartup()`
 - [ ] All write operations wrapped in transactions
+- [ ] Revit API access runs in valid main-thread/API context
+- [ ] Business rules and model manipulation live in UI-agnostic services
+- [ ] Unit tests exist for all impacted layers (Methods, Classes, Services, Commands, ViewModels)
 - [ ] Package versions only in `Directory.Packages.props`
 - [ ] No secrets or credentials committed
 
@@ -64,3 +68,5 @@ Read only what you need based on the task at hand:
 
 ## Related Guidance
 For agent-based development with full context, use the **@RevitDevelopment** custom agent.
+
+For legacy UI modernization, use **revit-winforms-to-wpf-mvvm-prism-ref**.
