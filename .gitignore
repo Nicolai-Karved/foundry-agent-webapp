@@ -45,3 +45,4 @@ appsettings.*.local.json
 **/local.settings.json
 **/local.settings.*.json
 
+docs/artifacts/*

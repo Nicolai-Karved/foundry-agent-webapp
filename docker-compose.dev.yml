@@ -1,0 +1,47 @@
+name: foundry-agent-webapp-dev
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: deployment/docker/backend.dev.Dockerfile
+    container_name: foundry-agent-backend-dev
+    working_dir: /src/backend/WebApp.Api
+    env_file:
+      - ./.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8089
+      DOTNET_USE_POLLING_FILE_WATCHER: "1"
+      AI_AGENT_ENDPOINT: ${AZURE_EXISTING_AIPROJECT_ENDPOINT:-https://aif-naviate-agent-dev.services.ai.azure.com/api/projects/projaif-naviate-agent-dev}
+      AI_AGENT_ID: ${AI_AGENT_ID:-generic-bim}
+      AI_AGENT_ID_AIR: ${AZURE_EXISTING_AGENT_ID:-air-compliance-checker}
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./backend:/src/backend
+      - nuget-packages:/root/.nuget/packages
+      - ${USERPROFILE}/.azure:/root/.azure
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deployment/docker/frontend.dev.Dockerfile
+    container_name: foundry-agent-frontend-dev
+    working_dir: /app/frontend
+    depends_on:
+      - backend
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      VITE_API_URL: /api
+      VITE_API_PROXY_TARGET: http://backend:8089
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - frontend-node-modules:/app/frontend/node_modules
+
+volumes:
+  nuget-packages:
+  frontend-node-modules:

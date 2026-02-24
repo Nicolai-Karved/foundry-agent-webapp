@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using WebApp.Api.Models;
 
 namespace WebApp.Api.Services;
@@ -79,8 +80,9 @@ public class AgentFrameworkService : IDisposable
 
         if (environment == "Development")
         {
-            _logger.LogInformation("Development: Using ChainedTokenCredential (AzureCli -> AzureDeveloperCli)");
+            _logger.LogInformation("Development: Using ChainedTokenCredential (Environment -> AzureCli -> AzureDeveloperCli)");
             credential = new ChainedTokenCredential(
+                new EnvironmentCredential(),
                 new AzureCliCredential(),
                 new AzureDeveloperCliCredential()
             );
@@ -1145,19 +1147,19 @@ public class AgentFrameworkService : IDisposable
         if (!string.IsNullOrWhiteSpace(message))
         {
             var normalizedMessage = message.ToLowerInvariant();
-            if (normalizedMessage.Contains("bep", StringComparison.Ordinal)
-                && (normalizedMessage.Contains("air", StringComparison.Ordinal)
-                    || normalizedMessage.Contains("eir", StringComparison.Ordinal)))
+            if (ContainsWholeWord(normalizedMessage, "bep")
+                && (ContainsWholeWord(normalizedMessage, "air")
+                    || ContainsWholeWord(normalizedMessage, "eir")))
             {
                 return new RouteDecision(AgentRoute.Bep, "message:bep+air_or_eir");
             }
 
-            if (normalizedMessage.Contains("eir", StringComparison.Ordinal))
+            if (ContainsWholeWord(normalizedMessage, "eir"))
             {
                 return new RouteDecision(AgentRoute.Eir, "message:eir");
             }
 
-            if (normalizedMessage.Contains("air", StringComparison.Ordinal))
+            if (ContainsWholeWord(normalizedMessage, "air"))
             {
                 return new RouteDecision(AgentRoute.Air, "message:air");
             }
@@ -1192,6 +1194,17 @@ public class AgentFrameworkService : IDisposable
 
     private sealed record RouteDecision(AgentRoute Route, string Reason);
 
+    private static bool ContainsWholeWord(string text, string keyword)
+    {
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(keyword))
+        {
+            return false;
+        }
+
+        var pattern = $@"(?<![a-z0-9]){Regex.Escape(keyword)}(?![a-z0-9])";
+        return Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
     private static string BuildBepComparisonContextPrompt()
     {
         return "COMPARISON_CONTEXT\n\nYou are evaluating an uploaded BEP against uploaded AIR and EIR documents.\n- Prioritize direct cross-document consistency checks between BEP, AIR, and EIR.\n- Produce a complete structured report with score, findings, and remediation tasks.\n- Do not depend on standards retrieval unless explicitly provided in the conversation.";
@@ -1220,53 +1233,94 @@ public class AgentFrameworkService : IDisposable
 
     private async Task<(ChatClientAgent Agent, string ReferenceName)> TryResolveAgentAsync(string configuredAgentId, CancellationToken cancellationToken)
     {
-        var baseName = NormalizeAgentReferenceName(configuredAgentId);
-        if (string.IsNullOrWhiteSpace(baseName))
+        var candidates = BuildAgentLookupCandidates(configuredAgentId);
+        if (candidates.Count == 0)
         {
-            throw new InvalidOperationException($"Configured AI_AGENT_ID '{configuredAgentId}' cannot be normalized to a valid agent name.");
+            throw new InvalidOperationException($"Configured AI_AGENT_ID '{configuredAgentId}' does not contain a valid agent name.");
         }
 
-        try
+        Exception? lastNotFoundException = null;
+
+        foreach (var candidate in candidates)
         {
-            // Always resolve by base name to avoid version suffix and invalid character issues.
-            var agent = await _projectClient.GetAIAgentAsync(
-                name: baseName,
-                cancellationToken: cancellationToken);
+            try
+            {
+                var agent = await _projectClient.GetAIAgentAsync(
+                    name: candidate,
+                    cancellationToken: cancellationToken);
 
-            return (agent, baseName);
+                if (!string.Equals(candidate, candidates[0], StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning(
+                        "Agent resolved using fallback candidate '{Candidate}' for configured id '{ConfiguredAgentId}'.",
+                        candidate,
+                        configuredAgentId);
+                }
+
+                return (agent, candidate);
+            }
+            catch (Exception ex) when (IsAgentNotFound(ex))
+            {
+                lastNotFoundException = ex;
+                _logger.LogDebug(
+                    ex,
+                    "Agent candidate '{Candidate}' was not found while resolving configured id '{ConfiguredAgentId}'.",
+                    candidate,
+                    configuredAgentId);
+            }
         }
-        catch (Exception ex) when (ShouldFallbackToLatest(configuredAgentId, ex))
-        {
-            _logger.LogWarning(
-                ex,
-                "Configured agent version was not found for {ConfiguredAgentId}. Falling back to latest version of {BaseName}.",
-                configuredAgentId,
-                baseName);
 
-            var fallbackAgent = await _projectClient.GetAIAgentAsync(
-                name: baseName,
-                cancellationToken: cancellationToken);
-
-            return (fallbackAgent, baseName);
-        }
+        var attempted = string.Join(", ", candidates.Select(c => $"'{c}'"));
+        throw new InvalidOperationException(
+            $"Unable to resolve agent for configured AI_AGENT_ID '{configuredAgentId}'. Tried: {attempted}. " +
+            "Verify AI_AGENT_ID (or AZURE_EXISTING_AGENT_ID in local docker env) points to an existing agent name.",
+            lastNotFoundException);
     }
 
-    private static bool ShouldFallbackToLatest(string configuredAgentId, Exception ex)
+    private static bool IsAgentNotFound(Exception ex)
     {
-        if (!configuredAgentId.Contains(':'))
-        {
-            return false;
-        }
-
         var message = ex.Message;
         return message.Contains("with version not found", StringComparison.OrdinalIgnoreCase)
             || message.Contains("ServiceError: not_found", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("\"code\": \"not_found\"", StringComparison.OrdinalIgnoreCase);
+            || message.Contains("\"code\": \"not_found\"", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("GetAgentRecordByNameAsync", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<string> BuildAgentLookupCandidates(string configuredAgentId)
+    {
+        var sanitized = SanitizeAgentReferenceInput(configuredAgentId);
+        var baseName = sanitized.Split(':', 2)[0].Trim();
+        var normalized = NormalizeAgentReferenceName(sanitized);
+        var normalizedBase = NormalizeAgentReferenceName(baseName);
+
+        var candidates = new List<string>();
+        var comparer = StringComparer.OrdinalIgnoreCase;
+
+        foreach (var candidate in new[] { sanitized, baseName, normalized, normalizedBase })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            if (!candidates.Contains(candidate, comparer))
+            {
+                candidates.Add(candidate);
+            }
+        }
+
+        return candidates;
+    }
+
+    private static string SanitizeAgentReferenceInput(string configuredAgentId)
+    {
+        return configuredAgentId.Trim().Trim('\"', '\'');
     }
 
     private static string NormalizeAgentReferenceName(string configuredAgentId)
     {
-        var baseName = configuredAgentId.Split(':', 2)[0].Trim();
+        var sanitized = SanitizeAgentReferenceInput(configuredAgentId);
+        var baseName = sanitized.Split(':', 2)[0].Trim();
         if (string.IsNullOrWhiteSpace(baseName))
         {
             return string.Empty;

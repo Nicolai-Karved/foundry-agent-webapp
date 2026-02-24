@@ -70,7 +70,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     if (accounts.length > 0) {
       dispatch({ type: 'AUTH_INITIALIZED', user: accounts[0] });
+      return;
     }
+
+    dispatch({ type: 'AUTH_UNAUTHENTICATED' });
   }, [accounts]);
 
   // Dev mode: Log when provider mounts and unmounts

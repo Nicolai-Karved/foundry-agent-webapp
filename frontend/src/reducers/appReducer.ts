@@ -25,6 +25,25 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           user: action.user,
           error: null,
         },
+        chat: {
+          ...state.chat,
+          status: state.chat.status === 'error' && state.chat.error?.code === 'AUTH' ? 'idle' : state.chat.status,
+          error: state.chat.error?.code === 'AUTH' ? null : state.chat.error,
+        },
+        ui: {
+          ...state.ui,
+          chatInputEnabled: state.chat.error?.code === 'AUTH' ? true : state.ui.chatInputEnabled,
+        },
+      };
+
+    case 'AUTH_UNAUTHENTICATED':
+      return {
+        ...state,
+        auth: {
+          status: 'unauthenticated',
+          user: null,
+          error: null,
+        },
       };
 
     case 'AUTH_TOKEN_EXPIRED':

@@ -172,6 +172,20 @@ azd env set AI_AGENT_ID <agent-name>
 .\deployment\scripts\start-local-dev.ps1
 ```
 
+### Option 3: Docker Compose Dev (Hot Reload in Containers)
+```powershell
+# Start backend + frontend dev containers with live code updates
+.\deployment\scripts\start-local-docker-dev.ps1
+
+# Stop containers
+docker compose -f docker-compose.dev.yml down
+```
+
+This option is useful if you want local development isolated in containers while still keeping updates easy:
+- **Backend** runs with `dotnet watch`
+- **Frontend** runs with Vite HMR
+- Source code is bind-mounted, so edits are reflected without image rebuilds
+
 ### Hot Reload
 - **React**: Hot Module Replacement (HMR) - instant browser updates
 - **C#**: Watch mode - auto-recompiles on save, check terminal for errors
@@ -190,7 +204,7 @@ azd deploy  # 3-5 minutes
 **Authentication**: Microsoft Entra ID (PKCE flow)  
 **AI Integration**: Azure AI Foundry v2 Agents API (`Azure.AI.Projects` SDK)  
 **Deployment**: Single container, Azure Container Apps  
-**Local Dev**: Native (no Docker required)
+**Local Dev**: Native by default, optional Docker Compose dev workflow
 
 ### Known Limitations
 
@@ -211,6 +225,7 @@ For tracking feature updates, see issue [#14](https://github.com/microsoft-found
 | `azd up` | Initial deployment (infra + code) | 10-12 min |
 | `azd deploy` | Deploy code changes only | 3-5 min |
 | `.\deployment\scripts\start-local-dev.ps1` | Start local development | Instant |
+| `.\deployment\scripts\start-local-docker-dev.ps1` | Start local Docker dev workflow (hot reload) | ~1-3 min first run |
 | `.\deployment\scripts\ingest-docs-to-search.ps1` | Upload PDFs, wait for JSONL, run indexer | Varies |
 | `.\deployment\scripts\list-agents.ps1` | List agents in your project | Instant |
 | `azd provision` | Re-deploy infrastructure / update RBAC | 2-3 min |
@@ -247,7 +262,7 @@ This template deploys the following Azure resources:
 - **Log Analytics Workspace** - Application logging and monitoring
 - **Managed Identity** - System-assigned identity with RBAC to AI Foundry resource
 
-**Local development requires no Azure resources** - runs natively without Docker or cloud dependencies.
+**Local development requires no Azure resources** - runs natively or in local Docker containers without cloud dependencies.
 
 
 

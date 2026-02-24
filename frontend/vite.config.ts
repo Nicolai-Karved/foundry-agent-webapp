@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
     : __dirname;
 
   const env = loadEnv(mode, envDir, "");
+  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || env.VITE_API_PROXY_TARGET || "http://localhost:8089";
   
   // Map to VITE_ prefixed vars for client access (Vite only exposes VITE_ prefixed vars)
   process.env.VITE_ENTRA_SPA_CLIENT_ID = env.ENTRA_SPA_CLIENT_ID || env.VITE_ENTRA_SPA_CLIENT_ID;
@@ -31,7 +32,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         "/api": {
-          target: "http://localhost:8089",
+          target: apiProxyTarget,
           changeOrigin: true,
           secure: false,
         },

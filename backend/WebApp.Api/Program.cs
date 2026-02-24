@@ -271,9 +271,12 @@ app.MapPost("/api/chat/stream", async (
     ChatRequest request,
     AgentFrameworkService agentService,
     HttpContext httpContext,
+    ILoggerFactory loggerFactory,
     IHostEnvironment environment,
     CancellationToken cancellationToken) =>
 {
+    var logger = loggerFactory.CreateLogger("ChatStreamEndpoint");
+
     try
     {
         httpContext.Response.Headers.Append("Content-Type", "text/event-stream");
@@ -337,8 +340,18 @@ app.MapPost("/api/chat/stream", async (
 
         await WriteDoneEvent(httpContext.Response, cancellationToken);
     }
+    catch (OperationCanceledException) when (
+        cancellationToken.IsCancellationRequested ||
+        httpContext.RequestAborted.IsCancellationRequested)
+    {
+        logger.LogInformation(
+            "Chat stream was cancelled by client/request lifecycle. ConversationId={ConversationId}",
+            request.ConversationId ?? "(new)");
+    }
     catch (ArgumentException ex) when (ex.Message.Contains("Invalid") && (ex.Message.Contains("attachments") || ex.Message.Contains("image") || ex.Message.Contains("file")))
     {
+        logger.LogWarning(ex, "Invalid chat stream request payload");
+
         // Validation errors from image/file processing - return 400 Bad Request
         var errorResponse = ErrorResponseFactory.CreateFromException(
             ex, 
@@ -353,13 +366,12 @@ app.MapPost("/api/chat/stream", async (
     }
     catch (Exception ex)
     {
+        logger.LogError(ex, "Chat stream failed unexpectedly");
+
         var streamErrorCode = ex.Message.Contains("No standards clauses were retrieved", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("No requirements were retrieved", StringComparison.OrdinalIgnoreCase)
             ? "STANDARDS_EMPTY"
-            : ex.Message.Contains("token", StringComparison.OrdinalIgnoreCase)
-                || ex.Message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
-                ? "AUTH_REQUIRED"
-                : "STREAM_FAILURE";
+            : "STREAM_FAILURE";
 
         var errorResponse = ErrorResponseFactory.CreateFromException(
             ex, 

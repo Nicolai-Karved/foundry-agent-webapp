@@ -1,5 +1,5 @@
 import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsalAuthentication } from "@azure/msal-react";
-import { Spinner } from '@fluentui/react-components';
+import { Button, Spinner } from '@fluentui/react-components';
 import { useAppState } from './hooks/useAppState';
 import { InteractionType } from "@azure/msal-browser";
 import { ErrorBoundary } from "./components/core/ErrorBoundary";
@@ -8,19 +8,26 @@ import { loginRequest } from "./config/authConfig";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./hooks/useAuth";
 import type { IAgentMetadata } from "./types/chat";
+import { DETAILED_ERROR_MESSAGES } from "./types/errors";
 import "./App.css";
 
 function App() {
   // This hook handles authentication automatically - redirects if not authenticated
   useMsalAuthentication(InteractionType.Redirect, loginRequest);
   const { auth } = useAppState();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, isRedirectingForAuth, signInAgain } = useAuth();
   const [agentMetadata, setAgentMetadata] = useState<IAgentMetadata | null>(null);
   const [isLoadingAgent, setIsLoadingAgent] = useState(true);
+  const authErrorMessage = DETAILED_ERROR_MESSAGES.AUTH;
 
   // Wrap fetchAgentMetadata in useCallback to make it stable for the effect
   const fetchAgentMetadata = useCallback(async () => {
-    if (auth.status !== 'authenticated') return;
+    if (auth.status !== 'authenticated') {
+      setIsLoadingAgent(false);
+      return;
+    }
+
+    setIsLoadingAgent(true);
 
     try {
       const token = await getAccessToken();
@@ -67,16 +74,9 @@ function App() {
   return (
     <ErrorBoundary>
       {auth.status === 'initializing' || isLoadingAgent ? (
-        <div className="app-container" style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          height: '100vh', 
-          flexDirection: 'column', 
-          gap: '1rem' 
-        }}>
+        <div className="app-container app-status-center app-status-column">
           <Spinner size="large" />
-          <p style={{ margin: 0 }}>
+          <p className="app-status-message">
             {auth.status === 'initializing' ? 'Preparing your session...' : 'Loading agent...'}
           </p>
         </div>
@@ -96,13 +96,19 @@ function App() {
             )}
           </AuthenticatedTemplate>
           <UnauthenticatedTemplate>
-            <div className="app-container" style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              height: '100vh'
-            }}>
-              <p>Signing in...</p>
+            <div className="app-container app-status-center">
+              <div className="auth-status-panel">
+                <h2 className="auth-status-title">{authErrorMessage.title}</h2>
+                <p className="auth-status-text">{authErrorMessage.description} {authErrorMessage.hint}</p>
+
+                {isRedirectingForAuth ? (
+                  <p className="auth-status-redirecting">Redirecting to sign in…</p>
+                ) : (
+                  <Button appearance="primary" onClick={signInAgain}>
+                    Sign in again
+                  </Button>
+                )}
+              </div>
             </div>
           </UnauthenticatedTemplate>
         </>

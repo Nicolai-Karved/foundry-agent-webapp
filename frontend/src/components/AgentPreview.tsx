@@ -20,9 +20,9 @@ interface AgentPreviewProps {
 }
 
 export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, agentName, agentDescription, agentLogo, starterPrompts }) => {
-  const { chat, settings } = useAppState();
+  const { auth, chat, settings } = useAppState();
   const { dispatch } = useAppContext();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, signInAgain } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [highlightText, setHighlightText] = useState<string | string[] | null>(null);
@@ -56,6 +56,42 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     return latestMessage?.attachments;
   }, [chat.messages]);
 
+  useEffect(() => {
+    if (auth.status === 'authenticated' && chat.error?.code === 'AUTH') {
+      dispatch({ type: 'CHAT_CLEAR_ERROR' });
+    }
+  }, [auth.status, chat.error?.code, dispatch]);
+
+  const displayError = useMemo(() => {
+    if (!chat.error) {
+      return null;
+    }
+
+    if (auth.status === 'authenticated' && chat.error.code === 'AUTH') {
+      return {
+        ...chat.error,
+        code: 'SERVER',
+        message: 'You are signed in, but the request failed on the backend. Please retry in a moment.',
+        recoverable: true,
+        action: undefined,
+      };
+    }
+
+    if (chat.error.code !== 'AUTH' || chat.error.action) {
+      return chat.error;
+    }
+
+    return {
+      ...chat.error,
+      action: {
+        label: 'Sign in again',
+        handler: () => {
+          void signInAgain();
+        },
+      },
+    };
+  }, [auth.status, chat.error, signInAgain]);
+
   const handleTaskSelect = (
     task: Record<string, unknown>,
     reference?: string | string[],
@@ -76,13 +112,17 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
   };
 
   const handleSendMessage = async (text: string, files?: File[]) => {
-    await chatService.sendMessage(
-      text,
-      chat.currentConversationId,
-      files,
-      settings.selectedStandards,
-      settings.agentRouteOverride
-    );
+    try {
+      await chatService.sendMessage(
+        text,
+        chat.currentConversationId,
+        files,
+        settings.selectedStandards,
+        settings.agentRouteOverride
+      );
+    } catch (error) {
+      console.warn('Send message failed', error);
+    }
   };
 
   const handleClearError = () => {
@@ -103,7 +143,11 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     previousResponseId: string,
     conversationId: string
   ) => {
-    await chatService.sendMcpApproval(approvalRequestId, approved, previousResponseId, conversationId);
+    try {
+      await chatService.sendMcpApproval(approvalRequestId, approved, previousResponseId, conversationId);
+    } catch (error) {
+      console.warn('MCP approval flow failed', error);
+    }
   };
 
   const taskRatio = 0.2;
@@ -203,7 +247,7 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
         <ChatInterface 
           messages={chat.messages}
           status={chat.status}
-          error={chat.error}
+          error={displayError}
           streamingMessageId={chat.streamingMessageId}
           onSendMessage={handleSendMessage}
           onClearError={handleClearError}

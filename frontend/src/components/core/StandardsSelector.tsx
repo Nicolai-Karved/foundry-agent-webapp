@@ -49,7 +49,8 @@ export const StandardsSelector: React.FC = () => {
       setError(null);
 
       try {
-        const response = await fetch('/api/standards', {
+        const apiUrl = import.meta.env.VITE_API_URL || '/api';
+        const response = await fetch(`${apiUrl}/standards`, {
           method: 'GET',
         });
 

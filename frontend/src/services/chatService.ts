@@ -60,7 +60,7 @@ export class ChatService {
     const normalized = (code ?? '').toUpperCase();
 
     if (normalized === 'AUTH_REQUIRED') {
-      return createAppError(new Error(message), 'AUTH');
+      return createAppError(new Error(message), 'SERVER');
     }
 
     if (normalized === 'STANDARDS_EMPTY') {
@@ -73,6 +73,10 @@ export class ChatService {
     }
 
     return createAppError(new Error(message), 'STREAM');
+  }
+
+  private static isCancellationLikeMessage(message: string): boolean {
+    return /abort|aborted|cancel|canceled|client disconnected|request aborted/i.test(message);
   }
 
   constructor(
@@ -269,7 +273,7 @@ export class ChatService {
    * @throws {Error} If authentication fails or API request fails
    * 
    * @remarks
-   * Token acquisition: Attempts acquireTokenSilent first, falls back to acquireTokenPopup.
+  * Token acquisition: Attempts acquireTokenSilent first, falls back to acquireTokenRedirect.
    * Retries failed requests up to 3 times with exponential backoff.
    */
   async sendMessage(
@@ -421,7 +425,7 @@ export class ChatService {
     let structuredMode = false;
     let placeholderSet = false;
     const collectedAnnotations: IAnnotation[] = [];
-    const autoApproveMcp = true;
+    const autoApproveMcp = false;
 
     const setPlaceholder = () => {
       if (placeholderSet) return;
@@ -471,17 +475,25 @@ export class ChatService {
         buffer = remaining;
 
         for (const line of lines) {
+          if (this.streamCancelled) {
+            span.addEvent('stream.cancelled.client');
+            return;
+          }
+
           const event = parseSseLine(line);
           if (!event) continue;
 
           if (event.data?.error) {
             console.error('[ChatService] SSE error event received:', event.data.error);
             const errorMessage = event.data.error.message || event.data.error || 'Stream error occurred';
+
+            if (this.streamCancelled || ChatService.isCancellationLikeMessage(String(errorMessage))) {
+              span.addEvent('stream.error.ignored_after_cancel');
+              return;
+            }
+
             const errorCode = typeof event.data.error.code === 'string' ? event.data.error.code : undefined;
             const error = this.createStreamAppError(errorCode, errorMessage);
-            if (error.code === 'AUTH') {
-              this.dispatch({ type: 'AUTH_TOKEN_EXPIRED' });
-            }
             this.dispatch({ type: 'CHAT_ERROR', error });
             throw error;
           }
@@ -567,6 +579,13 @@ export class ChatService {
                       'STREAM'
                     );
                   }
+
+                  // Important: stop current stream before sending approval continuation.
+                  // Running overlapping streams for the same response can cause
+                  // "approval request does not have an approval" errors.
+                  this.streamCancelled = true;
+                  this.currentStreamAbort?.abort();
+
                   await this.sendMcpApproval(
                     approval.id,
                     true,
@@ -582,6 +601,10 @@ export class ChatService {
                   approvalRequest: event.data.approvalRequest,
                   previousResponseId: event.data.approvalRequest.previousResponseId ?? null,
                 });
+
+                // Wait for explicit user approval and resume via sendMcpApproval.
+                // Continuing this stream without approval results in invalid_request_error.
+                return;
               }
               break;
 
@@ -607,10 +630,13 @@ export class ChatService {
 
             case 'error':
               const errorMessage = `Stream error for message ${messageId}: ${event.data.message}`;
-              const error = this.createStreamAppError(event.data.code, errorMessage);
-              if (error.code === 'AUTH') {
-                this.dispatch({ type: 'AUTH_TOKEN_EXPIRED' });
+
+              if (this.streamCancelled || ChatService.isCancellationLikeMessage(errorMessage)) {
+                span.addEvent('stream.error.ignored_after_cancel');
+                return;
               }
+
+              const error = this.createStreamAppError(event.data.code, errorMessage);
               this.dispatch({ type: 'CHAT_ERROR', error });
               span.recordException(ChatService.toError(error));
               span.setStatus({ code: SpanStatusCode.ERROR });
@@ -625,6 +651,10 @@ export class ChatService {
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError' && this.streamCancelled) {
         // User intentionally cancelled the stream - not an error condition
+        return;
+      }
+
+      if (this.streamCancelled && error instanceof Error && ChatService.isCancellationLikeMessage(error.message)) {
         return;
       }
 

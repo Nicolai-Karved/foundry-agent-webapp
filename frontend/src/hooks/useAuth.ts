@@ -1,7 +1,7 @@
 import { useMsal } from "@azure/msal-react";
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
-import { tokenRequest } from "../config/authConfig";
-import { useCallback, useMemo } from "react";
+import { loginRequest, tokenRequest } from "../config/authConfig";
+import { useCallback, useMemo, useState } from "react";
 
 /**
  * Authentication hook for MSAL-based authentication.
@@ -31,6 +31,17 @@ import { useCallback, useMemo } from "react";
  */
 export const useAuth = () => {
   const { instance, accounts } = useMsal();
+  const [isRedirectingForAuth, setIsRedirectingForAuth] = useState(false);
+
+  const signInAgain = useCallback(async (): Promise<void> => {
+    try {
+      setIsRedirectingForAuth(true);
+      await instance.loginRedirect(loginRequest);
+    } catch (error) {
+      setIsRedirectingForAuth(false);
+      console.error("Sign-in redirect failed:", error);
+    }
+  }, [instance]);
 
   const getAccessToken = useCallback(async (): Promise<string | null> => {
     if (accounts.length === 0) {
@@ -45,21 +56,21 @@ export const useAuth = () => {
     try {
       // Try silent token acquisition first (uses cached token if valid)
       const response = await instance.acquireTokenSilent(request);
+      setIsRedirectingForAuth(false);
       return response.accessToken;
     } catch (error) {
       if (error instanceof InteractionRequiredAuthError) {
-        // Fallback to interactive login if silent fails
+        // Fallback to redirect-based interaction if silent fails
         console.warn(
-          "Silent token acquisition failed, prompting for interaction"
+          "Silent token acquisition failed, redirecting for interaction"
         );
-        try {
-          const response = await instance.acquireTokenPopup(request);
-          return response.accessToken;
-        } catch (popupError) {
-          console.error("Popup login failed:", popupError);
-          return null;
-        }
+
+        setIsRedirectingForAuth(true);
+        await instance.acquireTokenRedirect(request);
+        return null;
       }
+
+      setIsRedirectingForAuth(false);
       console.error("Token acquisition error:", error);
       return null;
     }
@@ -79,9 +90,11 @@ export const useAuth = () => {
   return useMemo(
     () => ({
       getAccessToken,
+      signInAgain,
       isAuthenticated,
       user,
+      isRedirectingForAuth,
     }),
-    [getAccessToken, isAuthenticated, user]
+    [getAccessToken, signInAgain, isAuthenticated, user, isRedirectingForAuth]
   );
 };
