@@ -2,9 +2,9 @@ import type { StandardSelection } from '../types/standards';
 
 export const STANDARDS_OPTIONS: StandardSelection[] = [
 	{
-		standardId: 'BS EN ISO 19650-0:2018',
+		standardId: 'PD 19650-0:2019',
 		title: 'Organization and digitization of information about buildings and civil engineering works — Information management using BIM — Part 0: Guidance',
-		publicationDate: '2018',
+		publicationDate: '2019',
 		issuingOrganization: 'BSI / ISO',
 		priority: 1,
 		mandatory: true,

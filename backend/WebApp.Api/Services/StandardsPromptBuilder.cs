@@ -90,6 +90,7 @@ public class StandardsPromptBuilder
         sb.AppendLine();
         sb.AppendLine("Rules for use:");
         sb.AppendLine("- Only use the clauses below as evidence.");
+        sb.AppendLine("- Never use model prior knowledge, assumptions, or external facts.");
         sb.AppendLine("- Every claim must cite at least one clause below using citation_document_name and citation.");
         sb.AppendLine("- If a requirement is not evidenced below, mark citation fields as \"N/A\" and explain the gap.");
         sb.AppendLine();
@@ -118,6 +119,7 @@ public class StandardsPromptBuilder
         sb.AppendLine("Rules for use:");
         sb.AppendLine("- You MUST produce one task row per requirement listed below.");
         sb.AppendLine("- Use only the uploaded document as evidence.");
+        sb.AppendLine("- Never use model prior knowledge, assumptions, or external facts.");
         sb.AppendLine("- Do NOT call external tools; rely on the requirements list and the uploaded document only.");
         sb.AppendLine("- Determine verdict using the strongest evidence you can find in the uploaded document:");
         sb.AppendLine("  - Pass: requirement clearly satisfied with direct evidence.");
@@ -125,6 +127,9 @@ public class StandardsPromptBuilder
         sb.AppendLine("  - Fail: requirement contradicted or clearly missing mandatory content.");
         sb.AppendLine("  - NoEvidence: only when no relevant evidence is found at all.");
         sb.AppendLine("- Evidence must quote exact source text when available; use \"N/A\" only when truly no evidence exists.");
+        sb.AppendLine("- Any task with missing, blank, or N/A citation_document_name/citation is invalid and must be treated as NoEvidence.");
+        sb.AppendLine("- citation_document_name and citation MUST point to standards evidence (standard id / clause / standards quote), never the uploaded AIR/EIR/BEP file.");
+        sb.AppendLine("- document_reference and reference MUST point to uploaded document evidence.");
         sb.AppendLine("- Output MUST be valid JSON only (no markdown). Use the schema below.");
         sb.AppendLine("- The tasks array must only contain actionable compliance tasks (no run metadata tasks). Clarification questions belong in response text only.");
         sb.AppendLine();
@@ -144,8 +149,8 @@ public class StandardsPromptBuilder
         sb.AppendLine("      \"verdict\": \"Pass|Partial|Fail|NA|Unknown|NoEvidence\",");
         sb.AppendLine("      \"severity\": \"critical|major|minor|info\",");
         sb.AppendLine("      \"evidence\": \"<exact quote from uploaded document or N/A>\",");
-        sb.AppendLine("      \"citation_document_name\": \"<document name or N/A>\",");
-        sb.AppendLine("      \"citation\": \"<supporting citation text or N/A>\",");
+        sb.AppendLine("      \"citation_document_name\": \"<standards source, e.g. standard_id or standard doc name, or N/A>\",");
+        sb.AppendLine("      \"citation\": \"<standards clause reference/quote, or N/A>\",");
         sb.AppendLine("      \"document_reference\": \"<page/section/key from uploaded doc if known>\",");
         sb.AppendLine("      \"reference\": [\"<exact triggering text from uploaded document>\"],");
         sb.AppendLine("      \"description\": \"<what is missing/non-compliant and why>\",");

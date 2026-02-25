@@ -2,6 +2,7 @@ using Azure;
 using Azure.Search.Documents;
 using Azure.Search.Documents.Models;
 using Azure.Identity;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
 using WebApp.Api.Models;
@@ -35,6 +36,38 @@ public record StandardsCatalogDiagnostics(
 public class StandardsRetrievalService
 {
     private static readonly ActivitySource ActivitySource = new("WebApp.Api.StandardsRetrieval");
+    private static readonly HashSet<string> MetadataOnlyFieldNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "uid",
+        "id",
+        "chunkType",
+        "sectionId",
+        "sectionTitle",
+        "paragraphId",
+        "pageNumber",
+        "startOffset",
+        "length",
+        "sourceUrl",
+        "blob_url",
+        "blobName",
+        "snippet_parent_id",
+        "standardId",
+        "StandardNumber",
+        "standardTitle",
+        "StandardTitle",
+        "PublicationDate",
+        "IssuingOrganization",
+        "TechnicalCommittee",
+        "ApprovalDate",
+        "ISBN",
+        "ICS",
+        "NationalImplementation",
+        "CopyrightHolder",
+        "CopyrightYear",
+        "CommitteeRepresentation",
+        "NationalAnnexReference",
+        "AmendmentsOrCorrigenda"
+    };
     private readonly SearchClient? _searchClient;
     private readonly ILogger<StandardsRetrievalService> _logger;
     private readonly int _defaultTopK;
@@ -470,21 +503,6 @@ public class StandardsRetrievalService
             options.Filter = filter;
         }
 
-        options.Select.Add("standardId");
-        options.Select.Add("StandardNumber");
-        options.Select.Add("standardTitle");
-        options.Select.Add("StandardTitle");
-        options.Select.Add("PublicationDate");
-        options.Select.Add("IssuingOrganization");
-        options.Select.Add("uid");
-        options.Select.Add("sectionId");
-        options.Select.Add("paragraphId");
-        options.Select.Add("pageNumber");
-        options.Select.Add("snippet");
-        options.Select.Add("content");
-        options.Select.Add("blobName");
-        options.Select.Add("sourceUrl");
-
         if (!string.IsNullOrWhiteSpace(_semanticConfiguration))
         {
             options.QueryType = SearchQueryType.Semantic;
@@ -499,33 +517,88 @@ public class StandardsRetrievalService
 
     private static string GetClauseText(StandardsSearchDocument doc)
     {
-        if (!string.IsNullOrWhiteSpace(doc.Snippet))
+        var primaryClauseText = FirstNonEmpty(doc.Snippet, doc.Content);
+        var additionalClauseText = BuildAdditionalClauseText(doc.AdditionalFields);
+
+        if (!string.IsNullOrWhiteSpace(primaryClauseText) && !string.IsNullOrWhiteSpace(additionalClauseText))
         {
-            return doc.Snippet;
+            if (additionalClauseText.Contains(primaryClauseText, StringComparison.Ordinal))
+            {
+                return additionalClauseText;
+            }
+
+            return $"{primaryClauseText}\n\n{additionalClauseText}";
         }
 
-        if (!string.IsNullOrWhiteSpace(doc.Content))
+        if (!string.IsNullOrWhiteSpace(primaryClauseText))
         {
-            return doc.Content;
+            return primaryClauseText;
         }
 
-        // Fallback to metadata-derived text when chunk text is not present.
-        var title = doc.StandardTitleLower ?? doc.StandardTitleAlt ?? doc.StandardTitle;
-        if (!string.IsNullOrWhiteSpace(title))
+        if (!string.IsNullOrWhiteSpace(additionalClauseText))
         {
-            var parts = new List<string> { title.Trim() };
-            if (!string.IsNullOrWhiteSpace(doc.PublicationDate))
-            {
-                parts.Add($"Publication date: {doc.PublicationDate.Trim()}");
-            }
-            if (!string.IsNullOrWhiteSpace(doc.IssuingOrganization))
-            {
-                parts.Add($"Issuing organization: {doc.IssuingOrganization.Trim()}");
-            }
-            return string.Join(". ", parts);
+            return additionalClauseText;
         }
 
         return string.Empty;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildAdditionalClauseText(IReadOnlyDictionary<string, JsonElement>? additionalFields)
+    {
+        if (additionalFields == null || additionalFields.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (fieldName, value) in additionalFields)
+        {
+            if (MetadataOnlyFieldNames.Contains(fieldName))
+            {
+                continue;
+            }
+
+            var text = value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Array => string.Join("; ", value.EnumerateArray()
+                    .Where(item => item.ValueKind == JsonValueKind.String)
+                    .Select(item => item.GetString())
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .Select(item => item!.Trim())),
+                _ => null
+            };
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            var normalized = text.Trim();
+            if (!seen.Add(normalized))
+            {
+                continue;
+            }
+
+            parts.Add($"[{fieldName}] {normalized}");
+        }
+
+        return string.Join("\n", parts);
     }
 
     private static string EscapeODataString(string value) => value.Replace("'", "''");
@@ -600,11 +673,15 @@ public class StandardsRetrievalService
         public string? PublicationDate { get; init; }
         public string? IssuingOrganization { get; init; }
         public string? SectionId { get; init; }
+        public string? SectionTitle { get; init; }
         public string? ParagraphId { get; init; }
         public int? PageNumber { get; init; }
         public string? Snippet { get; init; }
         public string? Content { get; init; }
         public string? BlobName { get; init; }
         public string? SourceUrl { get; init; }
+
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? AdditionalFields { get; init; }
     }
 }

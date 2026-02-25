@@ -1,0 +1,42 @@
+{
+  "name": "bim-standards-paragraph-index",
+  "kind": "searchIndex",
+  "description": "Knowledge source for BIM standards clause grounding using paragraph index.",
+  "searchIndexParameters": {
+    "searchIndexName": "bim-standards-paragraph-index",
+    "semanticConfigurationName": "bim-standards-semantic-config",
+    "sourceDataFields": [
+      "uid",
+      "standardId",
+      "StandardNumber",
+      "standardTitle",
+      "StandardTitle",
+      "PublicationDate",
+      "IssuingOrganization",
+      "sectionId",
+      "sectionTitle",
+      "paragraphId",
+      "pageNumber",
+      "chunkType",
+      "snippet",
+      "content",
+      "blobName",
+      "sourceUrl"
+    ],
+    "searchFields": [
+      "snippet",
+      "content",
+      "sectionTitle",
+      "standardTitle",
+      "StandardTitle",
+      "standardId",
+      "StandardNumber"
+    ]
+  },
+  "azureBlobParameters": null,
+  "mcpToolParameters": null,
+  "webParameters": null,
+  "remoteSharePointParameters": null,
+  "indexedSharePointParameters": null,
+  "indexedOneLakeParameters": null
+}

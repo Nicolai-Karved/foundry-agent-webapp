@@ -438,7 +438,7 @@ export class ChatService {
     };
 
     const finalizeStructured = () => {
-      const structured = this.parseStructuredResponse(structuredBuffer);
+      const structured = this.parseStructuredResponse(structuredBuffer, collectedAnnotations);
       if (structured) {
         this.dispatch({
           type: 'CHAT_SET_MESSAGE_STRUCTURED',
@@ -686,7 +686,7 @@ export class ChatService {
     return trimmed.startsWith('{') || trimmed.startsWith('```');
   }
 
-  private parseStructuredResponse(content: string): IStructuredResponse | null {
+  private parseStructuredResponse(content: string, annotations: IAnnotation[] = []): IStructuredResponse | null {
     const trimmed = content.trim();
     if (!trimmed) return null;
 
@@ -724,16 +724,113 @@ export class ChatService {
       : [];
 
     const clarificationTasks = tasks.filter((task) => this.isClarificationTask(task));
-    const actionableTasks = tasks.filter((task) => !this.isClarificationTask(task));
+    const documentName = typeof parsed.document_name === 'string' ? parsed.document_name : undefined;
+    const standardsCitationSeed = this.getStandardsCitationSeed(annotations);
+    const actionableTasks = tasks
+      .filter((task) => !this.isClarificationTask(task))
+      .map((task) => this.normalizeGroundingFields(task, documentName, standardsCitationSeed))
+      .map((task) => this.applyGroundingGuard(task));
 
     return {
       response: this.stripInternalRunMetadata(response),
       tasks: actionableTasks,
       clarificationTasks: clarificationTasks.length > 0 ? clarificationTasks : undefined,
-      documentName: typeof parsed.document_name === 'string' ? parsed.document_name : undefined,
+      documentName,
       documentId: typeof parsed.id === 'string' ? parsed.id : undefined,
       raw: parsed,
     };
+  }
+
+  private normalizeGroundingFields(
+    task: Record<string, unknown>,
+    documentName?: string,
+    standardsCitationSeed?: { label?: string; quote?: string }
+  ): Record<string, unknown> {
+    const normalized = { ...task };
+
+    const citationDocumentName = this.getTaskText(normalized, ['citation_document_name']);
+    const citation = this.getTaskText(normalized, ['citation']);
+
+    const standardId = this.getTaskText(normalized, ['standard_id', 'standardId', 'standard_number', 'standardNumber']);
+    const standardReference = this.getTaskText(normalized, ['standard_reference', 'standardReference']);
+    const clauseRef = this.getTaskText(normalized, ['clause_ref', 'clauseRef']);
+
+    if (!this.hasGroundedCitation(citationDocumentName)) {
+      if (this.hasGroundedCitation(standardId)) {
+        normalized.citation_document_name = standardId;
+      } else if (this.hasGroundedCitation(standardReference)) {
+        normalized.citation_document_name = standardReference;
+      } else if (this.hasGroundedCitation(standardsCitationSeed?.label ?? null)) {
+        normalized.citation_document_name = standardsCitationSeed?.label;
+      } else if (this.hasGroundedCitation(documentName ?? null)) {
+        normalized.citation_document_name = documentName;
+      }
+    }
+
+    if (!this.hasGroundedCitation(citation)) {
+      if (this.hasGroundedCitation(standardReference)) {
+        normalized.citation = standardReference;
+      } else if (this.hasGroundedCitation(clauseRef)) {
+        normalized.citation = clauseRef;
+      } else if (this.hasGroundedCitation(standardsCitationSeed?.quote ?? null)) {
+        normalized.citation = standardsCitationSeed?.quote;
+      }
+    }
+
+    return normalized;
+  }
+
+  private getStandardsCitationSeed(annotations: IAnnotation[]): { label?: string; quote?: string } {
+    const standardsAnnotation = annotations.find((annotation) => {
+      const text = `${annotation.label ?? ''} ${annotation.quote ?? ''} ${annotation.standardNumber ?? ''}`.toLowerCase();
+      return /\b(iso\s*19650|bs\s*en\s*iso\s*19650|pd\s*19650|standard|clause)\b/.test(text);
+    });
+
+    if (!standardsAnnotation) {
+      return {};
+    }
+
+    return {
+      label: standardsAnnotation.standardNumber ?? standardsAnnotation.label,
+      quote: standardsAnnotation.quote,
+    };
+  }
+
+  private applyGroundingGuard(task: Record<string, unknown>): Record<string, unknown> {
+    const citationDocumentName = this.getTaskText(task, ['citation_document_name']);
+    const citation = this.getTaskText(task, ['citation']);
+
+    if (!this.hasGroundedCitation(citationDocumentName) || !this.hasGroundedCitation(citation)) {
+      return {
+        ...task,
+        name: 'Ungrounded finding rejected',
+        verdict: 'NoEvidence',
+        severity: 'major',
+        requirement_text: 'Suppressed because no grounded citation was provided.',
+        description:
+          'This task was suppressed because citation fields were missing or marked N/A. Model-only assertions are not accepted.',
+        evidence: 'No grounded evidence returned from provided sources.',
+        citation_document_name: 'GROUNDING REQUIRED',
+        citation: 'No grounded citation returned. Regenerate with indexed/document evidence only.',
+        remediation:
+          'Regenerate this finding using only provided document evidence and retrieved standards clauses with explicit citations.',
+      };
+    }
+
+    return task;
+  }
+
+  private hasGroundedCitation(value: string | null): boolean {
+    if (!value) {
+      return false;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+
+    return normalized !== 'n/a' && normalized !== 'na' && normalized !== 'none' && normalized !== 'unknown';
   }
 
   private isClarificationTask(task: Record<string, unknown>): boolean {
@@ -754,6 +851,18 @@ export class ChatService {
       const value = task[key];
       if (typeof value === 'string' && value.trim()) {
         return value.trim();
+      }
+
+      if (Array.isArray(value)) {
+        const joined = value
+          .filter((entry) => typeof entry === 'string')
+          .map((entry) => String(entry).trim())
+          .filter((entry) => entry.length > 0)
+          .join('\n');
+
+        if (joined) {
+          return joined;
+        }
       }
     }
 

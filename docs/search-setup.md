@@ -18,11 +18,14 @@ The script will reuse `AZURE_RESOURCE_GROUP_NAME` and `AZURE_SUBSCRIPTION_ID` fr
 - Skillset: `deployment/search/bim-standards-paragraph-skillset.json`
 - Datasource: `deployment/search/knowledgesource-bim-standards-datasource.json`
 - Indexer: `deployment/search/knowledgesource-bim-standards-indexer.json`
+- Foundry knowledge source payload: `deployment/search/foundry-knowledgesource-bim-standards-paragraph-index.json`
 
 ## Notes
 
 - The indexer name matches the existing indexer, so this will replace the current configuration.
 - The datasource name matches the existing datasource, so this will replace the current configuration.
+- If you attach `bim-standards-paragraph-index` as a Foundry Agent knowledge source, use the provided payload with explicit `semanticConfigurationName`, `searchFields`, and `sourceDataFields`.
+- Avoid empty arrays for `searchFields` and `sourceDataFields` because this can degrade clause grounding quality and bias retrieval toward metadata-only fields.
 
 ## Local ingestion (PDFs → JSONL → Indexer)
 

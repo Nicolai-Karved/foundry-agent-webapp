@@ -63,6 +63,19 @@ export const StandardsSelector: React.FC = () => {
 
         if (data.length > 0) {
           setOptions(data);
+
+          if (selected.length > 0) {
+            const normalizedSelection = selected.filter((current) =>
+              data.some((option) => option.standardId === current.standardId)
+            );
+
+            if (normalizedSelection.length !== selected.length) {
+              dispatch({
+                type: 'SET_STANDARDS_SELECTION',
+                selectedStandards: normalizedSelection.length > 0 ? normalizedSelection : data,
+              });
+            }
+          }
         } else {
           setOptions(STANDARDS_OPTIONS);
           setError('Standards catalog is empty. Showing built-in defaults.');
