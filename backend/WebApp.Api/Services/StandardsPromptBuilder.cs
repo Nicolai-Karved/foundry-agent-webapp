@@ -118,6 +118,9 @@ public class StandardsPromptBuilder
         sb.AppendLine();
         sb.AppendLine("Rules for use:");
         sb.AppendLine("- You MUST produce one task row per requirement listed below.");
+        sb.AppendLine("- The tasks array length MUST equal the exact number of requirements listed below.");
+        sb.AppendLine("- Never skip a requirement; if uncertain, emit a NoEvidence task for that requirement.");
+        sb.AppendLine("- Never merge multiple requirements into one task and never split one requirement into multiple tasks.");
         sb.AppendLine("- Use only the uploaded document as evidence.");
         sb.AppendLine("- Never use model prior knowledge, assumptions, or external facts.");
         sb.AppendLine("- Do NOT call external tools; rely on the requirements list and the uploaded document only.");
@@ -161,6 +164,7 @@ public class StandardsPromptBuilder
         sb.AppendLine("- Do not include internal requirement IDs in name, description, evidence, or remediation text.");
         sb.AppendLine();
         sb.AppendLine("Requirements:");
+        sb.AppendLine($"- expected_task_count = {requirements.Count}");
 
         if (requirements.Count == 0)
         {

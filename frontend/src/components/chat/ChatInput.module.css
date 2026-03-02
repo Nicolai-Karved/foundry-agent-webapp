@@ -43,10 +43,6 @@
 }
 
 .verifyButton {
-  position: absolute;
-  right: 52px;
-  top: 8px;
-  z-index: 2;
   border: 1px solid var(--colorBrandStroke1) !important;
   background: var(--colorBrandBackground2) !important;
   color: var(--colorBrandForeground1) !important;

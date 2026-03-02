@@ -265,19 +265,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         >
           <ImperativeControlPlugin ref={controlRef} />
         </ChatInputFluent>
-        {selectedFiles.length > 0 && (
-          <Button
-            appearance="secondary"
-            size="small"
-            className={styles.verifyButton}
-            onClick={handleVerifyDocument}
-            disabled={disabled || isStreaming}
-            aria-label="Verify the document"
-            title="Verify the document"
-          >
-            Verify
-          </Button>
-        )}
         {showCounter && (
           <div className={counterStyles.container} id={charCounterId}>
             <Text className={`${counterStyles.text} ${getCounterStyle()}`}>
@@ -320,6 +307,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               aria-label="Cancel response"
               className={styles.cancelButton}
             />
+            {selectedFiles.length > 0 && (
+              <Button
+                appearance="secondary"
+                size="small"
+                className={styles.verifyButton}
+                onClick={handleVerifyDocument}
+                disabled={disabled || isStreaming}
+                aria-label="Verify the document"
+                title="Verify the document"
+              >
+                Verify
+              </Button>
+            )}
           </div>
         </div>
       </div>

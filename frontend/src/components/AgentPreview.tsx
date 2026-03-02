@@ -121,7 +121,16 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
         settings.agentRouteOverride
       );
     } catch (error) {
-      console.warn('Send message failed', error);
+      const normalized =
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+          : error;
+
+      console.warn('Send message failed', normalized);
     }
   };
 

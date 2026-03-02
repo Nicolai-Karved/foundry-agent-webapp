@@ -72,6 +72,24 @@ export class ChatService {
       };
     }
 
+    if (normalized === 'INVALID_PAYLOAD' || normalized === 'BAD_REQUEST') {
+      return {
+        code: 'SERVER',
+        message,
+        recoverable: true,
+        originalError: new Error(message),
+      };
+    }
+
+    if (message.trim().length > 0) {
+      return {
+        code: 'STREAM',
+        message,
+        recoverable: true,
+        originalError: new Error(message),
+      };
+    }
+
     return createAppError(new Error(message), 'STREAM');
   }
 

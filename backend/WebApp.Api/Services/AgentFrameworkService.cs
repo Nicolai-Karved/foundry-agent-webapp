@@ -209,6 +209,7 @@ public class AgentFrameworkService : IDisposable
         var routeDecision = DetermineAgentRoute(agentRouteHint, message, standardsSelected, fileDataUris);
         var selectedAgentId = ResolveAgentId(routeDecision);
         var isBepComparisonRoute = routeDecision.Route == AgentRoute.Bep;
+        var responseMode = DetermineResponseMode(message, imageDataUris, fileDataUris, standardsSelected);
 
         // Ensure agent can be resolved before starting streaming and use the resolved name/reference.
         var agentContext = await GetAgentAsync(selectedAgentId, cancellationToken);
@@ -222,6 +223,7 @@ public class AgentFrameworkService : IDisposable
         invokeActivity?.SetTag("app.agent.route_hint", agentRouteHint ?? "(none)");
         invokeActivity?.SetTag("app.agent.route", routeDecision.Route.ToString().ToLowerInvariant());
         invokeActivity?.SetTag("app.agent.route_reason", routeDecision.Reason);
+        invokeActivity?.SetTag("app.response.mode", responseMode.ToString().ToLowerInvariant());
 
         if (string.IsNullOrWhiteSpace(resolvedAgentReferenceName))
         {
@@ -282,86 +284,98 @@ public class AgentFrameworkService : IDisposable
                 throw new ArgumentException("Message cannot be null or whitespace", nameof(message));
             }
 
-            if (isBepComparisonRoute)
+            if (isBepComparisonRoute && responseMode == ResponseMode.Compliance)
             {
                 options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildBepComparisonContextPrompt()));
                 invokeActivity?.SetTag("app.standards.count", 0);
             }
             else
             {
-                var effectiveStandards = await ResolveStandardsAsync(standardsSelected, cancellationToken);
-                invokeActivity?.SetTag("app.standards.count", effectiveStandards.Count);
-
-                if (effectiveStandards.Count > 0)
+                if (responseMode == ResponseMode.Compliance)
                 {
-                    var effectivePolicy = BuildEffectivePolicyForRoute(policy, routeDecision.Route);
+                    var effectiveStandards = await ResolveStandardsAsync(standardsSelected, cancellationToken);
+                    invokeActivity?.SetTag("app.standards.count", effectiveStandards.Count);
 
-                    using (var policyActivity = ActivitySource.StartActivity("build_policy_prompt", ActivityKind.Internal))
+                    if (effectiveStandards.Count > 0)
                     {
-                        policyActivity?.SetTag("app.standards.count", effectiveStandards.Count);
-                        var policyPrompt = _promptBuilder.BuildPolicyPrompt(effectivePolicy, effectiveStandards);
-                        options.InputItems.Add(ResponseItem.CreateUserMessageItem(policyPrompt));
-                    }
+                        var effectivePolicy = BuildEffectivePolicyForRoute(policy, routeDecision.Route);
 
-                    if (_requirementsFirstEnabled)
-                    {
-                        using var requirementsActivity = ActivitySource.StartActivity("build_requirements_inventory", ActivityKind.Internal);
-                        requirementsActivity?.SetTag("app.requirements.max_per_standard", _requirementsFirstMaxPerStandard);
-                        requirementsActivity?.SetTag("app.requirements.page_size", _requirementsFirstPageSize);
-
-                        var chunkType = retrieval?.ChunkType ?? "paragraph";
-                        var requirements = await _standardsRetrieval.GetRequirementInventoryAsync(
-                            effectiveStandards,
-                            _requirementsFirstMaxPerStandard,
-                            _requirementsFirstPageSize,
-                            chunkType,
-                            cancellationToken);
-
-                        if (requirements.Count == 0)
+                        using (var policyActivity = ActivitySource.StartActivity("build_policy_prompt", ActivityKind.Internal))
                         {
-                            _logger.LogWarning(
-                                "No requirements retrieved for standards-first evaluation. Falling back to document-only analysis for this request.");
-                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildNoStandardsFallbackPrompt()));
+                            policyActivity?.SetTag("app.standards.count", effectiveStandards.Count);
+                            var policyPrompt = _promptBuilder.BuildPolicyPrompt(effectivePolicy, effectiveStandards);
+                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(policyPrompt));
                         }
+
+                        if (_requirementsFirstEnabled)
+                        {
+                            using var requirementsActivity = ActivitySource.StartActivity("build_requirements_inventory", ActivityKind.Internal);
+                            requirementsActivity?.SetTag("app.requirements.max_per_standard", _requirementsFirstMaxPerStandard);
+                            requirementsActivity?.SetTag("app.requirements.page_size", _requirementsFirstPageSize);
+
+                            var chunkType = retrieval?.ChunkType ?? "paragraph";
+                            var requirements = await _standardsRetrieval.GetRequirementInventoryAsync(
+                                effectiveStandards,
+                                _requirementsFirstMaxPerStandard,
+                                _requirementsFirstPageSize,
+                                chunkType,
+                                cancellationToken);
+
+                            if (requirements.Count == 0)
+                            {
+                                _logger.LogWarning(
+                                    "No requirements retrieved for standards-first evaluation. Falling back to document-only analysis for this request.");
+                                options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildNoStandardsFallbackPrompt()));
+                            }
+                            else
+                            {
+                                var requirementsPrompt = _promptBuilder.BuildRequirementsFirstPrompt(requirements);
+                                options.InputItems.Add(ResponseItem.CreateUserMessageItem(requirementsPrompt));
+
+                                retrievedClauses = requirements
+                                    .Select(r => new GroundedClause(
+                                        r.StandardId,
+                                        r.Version,
+                                        r.ClauseRef,
+                                        r.SourceDoc,
+                                        r.RequirementText))
+                                    .ToList();
+                            }
+                        }
+
                         else
                         {
-                            var requirementsPrompt = _promptBuilder.BuildRequirementsFirstPrompt(requirements);
-                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(requirementsPrompt));
+                            retrievedClauses = (await _standardsRetrieval.RetrieveClausesAsync(
+                                message,
+                                effectiveStandards,
+                                retrieval,
+                                cancellationToken)).ToList();
 
-                            retrievedClauses = requirements
-                                .Select(r => new GroundedClause(
-                                    r.StandardId,
-                                    r.Version,
-                                    r.ClauseRef,
-                                    r.SourceDoc,
-                                    r.RequirementText))
-                                .ToList();
+                            if (retrievedClauses.Count == 0)
+                            {
+                                _logger.LogWarning(
+                                    "No standards clauses were retrieved. Falling back to document-only analysis for this request.");
+                                options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildNoStandardsFallbackPrompt()));
+                            }
+                            else
+                            {
+                                using var groundedActivity = ActivitySource.StartActivity("build_grounded_prompt", ActivityKind.Internal);
+                                groundedActivity?.SetTag("app.grounded_clauses.count", retrievedClauses.Count);
+                                var groundedPrompt = _promptBuilder.BuildGroundedClausesPrompt(retrievedClauses);
+                                options.InputItems.Add(ResponseItem.CreateUserMessageItem(groundedPrompt));
+                            }
                         }
+
+                        retrievalRan = retrievedClauses.Count > 0;
                     }
-                    else
-                    {
-                        retrievedClauses = (await _standardsRetrieval.RetrieveClausesAsync(
-                            message,
-                            effectiveStandards,
-                            retrieval,
-                            cancellationToken)).ToList();
-
-                        if (retrievedClauses.Count == 0)
-                        {
-                            _logger.LogWarning(
-                                "No standards clauses were retrieved. Falling back to document-only analysis for this request.");
-                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(BuildNoStandardsFallbackPrompt()));
-                        }
-                        else
-                        {
-                            using var groundedActivity = ActivitySource.StartActivity("build_grounded_prompt", ActivityKind.Internal);
-                            groundedActivity?.SetTag("app.grounded_clauses.count", retrievedClauses.Count);
-                            var groundedPrompt = _promptBuilder.BuildGroundedClausesPrompt(retrievedClauses);
-                            options.InputItems.Add(ResponseItem.CreateUserMessageItem(groundedPrompt));
-                        }
-                    }
-
-                    retrievalRan = retrievedClauses.Count > 0;
+                }
+                else
+                {
+                    invokeActivity?.SetTag("app.standards.count", standardsSelected?.Count ?? 0);
+                    _logger.LogInformation(
+                        "Skipping compliance scaffolding for conversational turn. Route={Route}, Reason={Reason}",
+                        routeDecision.Route,
+                        routeDecision.Reason);
                 }
             }
 
@@ -1213,6 +1227,30 @@ public class AgentFrameworkService : IDisposable
     private static string BuildNoStandardsFallbackPrompt()
     {
         return "STANDARDS_GROUNDING_NOTICE\n\nNo grounded standards clauses were retrieved for this request. Continue with document-only analysis and explicitly state that standards grounding was unavailable for this run.";
+    }
+
+    private ResponseMode DetermineResponseMode(
+        string message,
+        List<string>? imageDataUris,
+        List<FileAttachment>? fileDataUris,
+        List<StandardSelection>? standardsSelected)
+    {
+        _ = message;
+        _ = standardsSelected;
+
+        var hasNewEvidence = (imageDataUris?.Count ?? 0) > 0 || (fileDataUris?.Count ?? 0) > 0;
+        if (hasNewEvidence)
+        {
+            return ResponseMode.Compliance;
+        }
+
+        return ResponseMode.Conversational;
+    }
+
+    private enum ResponseMode
+    {
+        Conversational,
+        Compliance
     }
 
     /// <summary>

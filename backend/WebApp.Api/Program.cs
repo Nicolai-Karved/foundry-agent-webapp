@@ -368,7 +368,9 @@ app.MapPost("/api/chat/stream", async (
     {
         logger.LogError(ex, "Chat stream failed unexpectedly");
 
-        var streamErrorCode = ex.Message.Contains("No standards clauses were retrieved", StringComparison.OrdinalIgnoreCase)
+        var streamErrorCode = ex.Message.Contains("invalid_payload", StringComparison.OrdinalIgnoreCase)
+            ? "INVALID_PAYLOAD"
+            : ex.Message.Contains("No standards clauses were retrieved", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("No requirements were retrieved", StringComparison.OrdinalIgnoreCase)
             ? "STANDARDS_EMPTY"
             : "STREAM_FAILURE";
