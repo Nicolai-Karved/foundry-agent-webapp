@@ -209,7 +209,7 @@ public class AgentFrameworkService : IDisposable
         var routeDecision = DetermineAgentRoute(agentRouteHint, message, standardsSelected, fileDataUris);
         var selectedAgentId = ResolveAgentId(routeDecision);
         var isBepComparisonRoute = routeDecision.Route == AgentRoute.Bep;
-        var responseMode = DetermineResponseMode(message, imageDataUris, fileDataUris, standardsSelected);
+        var responseMode = DetermineResponseMode(routeDecision.Route, message, imageDataUris, fileDataUris, standardsSelected);
 
         // Ensure agent can be resolved before starting streaming and use the resolved name/reference.
         var agentContext = await GetAgentAsync(selectedAgentId, cancellationToken);
@@ -1230,16 +1230,23 @@ public class AgentFrameworkService : IDisposable
     }
 
     private ResponseMode DetermineResponseMode(
+        AgentRoute route,
         string message,
         List<string>? imageDataUris,
         List<FileAttachment>? fileDataUris,
         List<StandardSelection>? standardsSelected)
     {
         _ = message;
-        _ = standardsSelected;
 
         var hasNewEvidence = (imageDataUris?.Count ?? 0) > 0 || (fileDataUris?.Count ?? 0) > 0;
         if (hasNewEvidence)
+        {
+            return ResponseMode.Compliance;
+        }
+
+        var hasStructuredStandardsSelection = (standardsSelected?.Count ?? 0) > 0;
+        var isSpecialistRoute = route is AgentRoute.Air or AgentRoute.Eir;
+        if (hasStructuredStandardsSelection && isSpecialistRoute)
         {
             return ResponseMode.Compliance;
         }
