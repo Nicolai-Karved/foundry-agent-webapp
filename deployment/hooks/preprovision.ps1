@@ -178,6 +178,9 @@ AzureAd__ClientId=$clientId
 AzureAd__Audience=api://$clientId
 AI_AGENT_ENDPOINT=$aiAgentEndpoint
 AI_AGENT_ID=$aiAgentId
+AI_AGENT_ID_STANDARD_COMPLIANCE=standard-compliance-checker
+AI_AGENT_ID_GENERAL_QA=general-bim-standard-qa
+AI_AGENT_ID_DOCUMENT_COMPARISON=document-compliance-checker
 "@ | Out-File -FilePath "backend/WebApp.Api/.env" -Encoding utf8 -Force
 
 Write-Host "[OK] Local dev config created" -ForegroundColor Green

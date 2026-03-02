@@ -29,6 +29,9 @@ public class AgentFrameworkService : IDisposable
     private static readonly ActivitySource ActivitySource = new("WebApp.Api.AgentFramework");
     private readonly AIProjectClient _projectClient;
     private readonly string _defaultAgentId;
+    private readonly string? _standardComplianceAgentId;
+    private readonly string? _generalQaAgentId;
+    private readonly string? _documentComparisonAgentId;
     private readonly string? _airAgentId;
     private readonly string? _eirAgentId;
     private readonly string? _bepAgentId;
@@ -66,6 +69,9 @@ public class AgentFrameworkService : IDisposable
         _defaultAgentId = configuration["AI_AGENT_ID"]
             ?? throw new InvalidOperationException("AI_AGENT_ID is not configured");
 
+        _standardComplianceAgentId = configuration["AI_AGENT_ID_STANDARD_COMPLIANCE"];
+        _generalQaAgentId = configuration["AI_AGENT_ID_GENERAL_QA"];
+        _documentComparisonAgentId = configuration["AI_AGENT_ID_DOCUMENT_COMPARISON"];
         _airAgentId = configuration["AI_AGENT_ID_AIR"];
         _eirAgentId = configuration["AI_AGENT_ID_EIR"];
         _bepAgentId = configuration["AI_AGENT_ID_BEP"];
@@ -207,9 +213,9 @@ public class AgentFrameworkService : IDisposable
         invokeActivity?.SetTag("app.has_mcp_approval", mcpApproval != null);
 
         var routeDecision = DetermineAgentRoute(agentRouteHint, message, standardsSelected, fileDataUris);
-        var selectedAgentId = ResolveAgentId(routeDecision);
-        var isBepComparisonRoute = routeDecision.Route == AgentRoute.Bep;
         var responseMode = DetermineResponseMode(routeDecision.Route, message, imageDataUris, fileDataUris, standardsSelected);
+        var selectedAgentId = ResolveAgentId(routeDecision, responseMode);
+        var isBepComparisonRoute = routeDecision.Route == AgentRoute.Bep;
 
         // Ensure agent can be resolved before starting streaming and use the resolved name/reference.
         var agentContext = await GetAgentAsync(selectedAgentId, cancellationToken);
@@ -368,6 +374,9 @@ public class AgentFrameworkService : IDisposable
 
                         retrievalRan = retrievedClauses.Count > 0;
                     }
+
+                    options.InputItems.Add(ResponseItem.CreateUserMessageItem(
+                        _promptBuilder.BuildStructuredOutputContractPrompt()));
                 }
                 else
                 {
@@ -1036,15 +1045,42 @@ public class AgentFrameworkService : IDisposable
         return agentVersion?.Name ?? _defaultAgentId;
     }
 
-    private string ResolveAgentId(RouteDecision routeDecision)
+    private string ResolveAgentId(RouteDecision routeDecision, ResponseMode responseMode)
     {
-        var configuredAgentId = routeDecision.Route switch
+        // Unified 3-agent topology (new keys) with legacy fallback chain.
+        // 1) Conversational/default QA turns
+        if (responseMode == ResponseMode.Conversational)
         {
-            AgentRoute.Air => _airAgentId,
-            AgentRoute.Eir => _eirAgentId,
-            AgentRoute.Bep => _bepAgentId,
-            _ => _defaultAgentId
-        };
+            var qaAgentId = FirstNonEmpty(_defaultAgentId, _generalQaAgentId);
+            if (!string.IsNullOrWhiteSpace(qaAgentId))
+            {
+                return qaAgentId;
+            }
+        }
+
+        // 2) Document comparison / BEP route
+        if (routeDecision.Route == AgentRoute.Bep)
+        {
+            var comparisonAgentId = FirstNonEmpty(_documentComparisonAgentId, _bepAgentId, _defaultAgentId);
+            if (!string.IsNullOrWhiteSpace(comparisonAgentId))
+            {
+                return comparisonAgentId;
+            }
+        }
+
+        // 3) AIR/EIR compliance route
+        if (routeDecision.Route is AgentRoute.Air or AgentRoute.Eir)
+        {
+            var legacySpecialist = routeDecision.Route == AgentRoute.Air ? _airAgentId : _eirAgentId;
+            var complianceAgentId = FirstNonEmpty(_standardComplianceAgentId, legacySpecialist, _defaultAgentId);
+            if (!string.IsNullOrWhiteSpace(complianceAgentId))
+            {
+                return complianceAgentId;
+            }
+        }
+
+        // 4) Fallback for other compliance turns
+        var configuredAgentId = FirstNonEmpty(_standardComplianceAgentId, _defaultAgentId);
 
         if (!string.IsNullOrWhiteSpace(configuredAgentId))
         {
@@ -1080,6 +1116,19 @@ public class AgentFrameworkService : IDisposable
         }
 
         return _defaultAgentId;
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
     }
 
     private static PolicyConfig? BuildEffectivePolicyForRoute(PolicyConfig? policy, AgentRoute route)

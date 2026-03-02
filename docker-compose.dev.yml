@@ -15,7 +15,12 @@ services:
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
       AI_AGENT_ENDPOINT: ${AZURE_EXISTING_AIPROJECT_ENDPOINT:-https://aif-naviate-agent-dev.services.ai.azure.com/api/projects/projaif-naviate-agent-dev}
       AI_AGENT_ID: ${AI_AGENT_ID:-generic-bim}
-      AI_AGENT_ID_AIR: ${AZURE_EXISTING_AGENT_ID:-air-compliance-checker}
+      AI_AGENT_ID_STANDARD_COMPLIANCE: ${AI_AGENT_ID_STANDARD_COMPLIANCE:-standard-compliance-checker}
+      AI_AGENT_ID_GENERAL_QA: ${AI_AGENT_ID_GENERAL_QA:-general-bim-standard-qa}
+      AI_AGENT_ID_DOCUMENT_COMPARISON: ${AI_AGENT_ID_DOCUMENT_COMPARISON:-document-compliance-checker}
+      AI_AGENT_ID_AIR: ${AI_AGENT_ID_AIR:-air-compliance-checker}
+      AI_AGENT_ID_EIR: ${AI_AGENT_ID_EIR:-eir-compliance-checker}
+      AI_AGENT_ID_BEP: ${AI_AGENT_ID_BEP:-bep-compliance-checker}
     ports:
       - "8089:8089"
     volumes:

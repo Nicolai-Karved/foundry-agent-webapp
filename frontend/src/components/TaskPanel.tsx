@@ -18,7 +18,34 @@ const taskKeyOrder = [
   'citation',
   'document_reference',
   'reference',
+  'remediation',
 ];
+
+const visibleTaskKeys = new Set([
+  'description',
+  'citation_document_name',
+  'citation',
+  'document_reference',
+  'reference',
+  'remediation',
+]);
+
+const normalizeComparableText = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).join('\n').toLowerCase();
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value).toLowerCase();
+  }
+
+  return String(value)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+};
 
 const formatKeyLabel = (key: string) =>
   key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
@@ -51,15 +78,58 @@ const getTaskEntries = (task: StructuredTask) => {
   const taskObject = (task && typeof task === 'object') ? task as Record<string, unknown> : {};
   const ordered: Array<[string, unknown]> = [];
 
+  const citationDocumentName = taskObject.citation_document_name;
+  const standardId = taskObject.standard_id;
+  const shouldPreferStandardId =
+    typeof citationDocumentName === 'string' &&
+    citationDocumentName.length > 80 &&
+    typeof standardId === 'string' &&
+    standardId.trim().length > 0;
+
+  const normalizedSeen = new Set<string>();
+
   taskKeyOrder.forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(taskObject, key)) {
-      ordered.push([key, taskObject[key]]);
+    if (!visibleTaskKeys.has(key)) {
+      return;
     }
+
+    if (!Object.prototype.hasOwnProperty.call(taskObject, key)) {
+      return;
+    }
+
+    let value = taskObject[key];
+
+    if (key === 'citation_document_name' && shouldPreferStandardId) {
+      value = standardId;
+    }
+
+    const normalizedValue = normalizeComparableText(value);
+    if (!normalizedValue || normalizedValue === 'n/a' || normalizedValue === 'na') {
+      return;
+    }
+
+    if (normalizedSeen.has(normalizedValue)) {
+      return;
+    }
+
+    normalizedSeen.add(normalizedValue);
+    ordered.push([key, value]);
   });
 
   Object.keys(taskObject).forEach((key) => {
-    if (!taskKeyOrder.includes(key) && key !== 'id') {
-      ordered.push([key, taskObject[key]]);
+    if (!taskKeyOrder.includes(key) && key !== 'id' && visibleTaskKeys.has(key)) {
+      const value = taskObject[key];
+      const normalizedValue = normalizeComparableText(value);
+      if (!normalizedValue || normalizedValue === 'n/a' || normalizedValue === 'na') {
+        return;
+      }
+
+      if (normalizedSeen.has(normalizedValue)) {
+        return;
+      }
+
+      normalizedSeen.add(normalizedValue);
+      ordered.push([key, value]);
     }
   });
 

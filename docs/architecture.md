@@ -94,6 +94,13 @@ The backend route selector in `AgentFrameworkService` chooses the agent based on
 4. Message text heuristics
 5. Default agent fallback
 
+Unified topology target (current migration state):
+- `standard-compliance-checker` — standards-grounded AIR/EIR compliance turns
+- `general-bim-standard-qa` — conversational/general BIM standards Q&A turns
+- `document-compliance-checker` — BEP/multi-document comparison turns
+
+Legacy specialist IDs (`AI_AGENT_ID_AIR`, `AI_AGENT_ID_EIR`, `AI_AGENT_ID_BEP`) remain supported as fallback during migration.
+
 #### AIR compliance flow
 - Route resolves to `air` specialist agent when hint/inputs indicate AIR.
 - Compliance workflow is enabled when either:

@@ -1,7 +1,8 @@
 import { Suspense, memo, useMemo, useCallback } from 'react';
-import { Spinner, Tooltip } from '@fluentui/react-components';
+import { Spinner, Tooltip, Button } from '@fluentui/react-components';
 import { CopilotMessage } from '@fluentui-copilot/react-copilot-chat';
-import { DocumentRegular, GlobeRegular, FolderRegular, OpenRegular } from '@fluentui/react-icons';
+import { DocumentRegular, GlobeRegular, FolderRegular, OpenRegular, ArrowDownload24Regular } from '@fluentui/react-icons';
+import jsPDF from 'jspdf';
 import { Markdown } from '../core/Markdown';
 import { AgentIcon } from '../core/AgentIcon';
 import { UsageInfo } from './UsageInfo';
@@ -17,6 +18,231 @@ interface AssistantMessageProps {
   agentLogo?: string;
   isStreaming?: boolean;
 }
+
+const sanitizeFilenamePart = (value: string): string => {
+  const cleaned = value
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+
+  return cleaned.slice(0, 36) || 'report';
+};
+
+const formatTimestampForFilename = (date: Date): string => {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+
+  return `${year}${month}${day}-${hour}${minute}`;
+};
+
+const getShortReportTitle = (content: string): string => {
+  const headingMatch = content.match(/^##\s+(.+)$/m);
+  if (headingMatch?.[1]) {
+    return sanitizeFilenamePart(headingMatch[1]);
+  }
+
+  const firstLine = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  return sanitizeFilenamePart(firstLine ?? 'report');
+};
+
+const convertMarkdownToPlainText = (content: string): string => {
+  return content
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, ''))
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/`/g, '')
+    .replace(/\[(.*?)\]\((.*?)\)/g, '$1 ($2)')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+const normalizePdfText = (value: string): string => {
+  return value
+    .replace(/\u0000/g, '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\t/g, '    ')
+    .replace(/\s+$/gm, '')
+    .normalize('NFKC');
+};
+
+const stripInlineMarkdown = (line: string): string =>
+  line
+    .replace(/\[(.*?)\]\((.*?)\)/g, '$1 ($2)')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .trim();
+
+const isTableLine = (line: string): boolean => /^\|.*\|\s*$/.test(line.trim());
+const isTableSeparator = (line: string): boolean => /^\|[\s:\-\|]+\|\s*$/.test(line.trim());
+
+const parseTableRow = (line: string): string[] =>
+  line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => stripInlineMarkdown(cell));
+
+const downloadReportPdf = (content: string): void => {
+  const generatedAt = new Date();
+  const shortTitle = getShortReportTitle(content);
+  const timestamp = formatTimestampForFilename(generatedAt);
+  const fileName = `${shortTitle}-${timestamp}.pdf`;
+
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 42;
+  const usableWidth = pageWidth - margin * 2;
+  const usableHeight = pageHeight - margin * 2;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(shortTitle.replace(/-/g, ' '), margin, margin);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(normalizePdfText(`Generated: ${generatedAt.toLocaleString()}`), margin, margin + 16);
+
+  const reportText = normalizePdfText(content);
+  const lines = reportText.split(/\r?\n/);
+
+  const lineHeight = 14;
+  const paragraphSpacing = 5;
+  const tableCellPadding = 4;
+  let y = margin + 34;
+
+  const ensureRoom = (requiredHeight: number) => {
+    if (y + requiredHeight > margin + usableHeight) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+
+  const writeWrappedText = (
+    text: string,
+    x: number,
+    maxWidth: number,
+    options?: { bold?: boolean; size?: number }
+  ) => {
+    if (!text.trim()) {
+      y += paragraphSpacing;
+      return;
+    }
+
+    doc.setFont('helvetica', options?.bold ? 'bold' : 'normal');
+    doc.setFontSize(options?.size ?? 10);
+
+    const wrapped = doc.splitTextToSize(text, maxWidth);
+    const requiredHeight = wrapped.length * lineHeight;
+    ensureRoom(requiredHeight + paragraphSpacing);
+
+    wrapped.forEach((line: string) => {
+      doc.text(line, x, y);
+      y += lineHeight;
+    });
+
+    y += paragraphSpacing;
+  };
+
+  let index = 0;
+  while (index < lines.length) {
+    const raw = lines[index];
+    const line = stripInlineMarkdown(raw);
+
+    if (!line.trim()) {
+      y += paragraphSpacing;
+      index += 1;
+      continue;
+    }
+
+    if (/^---+$/.test(line.trim())) {
+      ensureRoom(lineHeight);
+      doc.setDrawColor(160);
+      doc.line(margin, y - 6, margin + usableWidth, y - 6);
+      y += paragraphSpacing;
+      index += 1;
+      continue;
+    }
+
+    if (isTableLine(raw)) {
+      const tableLines: string[] = [];
+      while (index < lines.length && isTableLine(lines[index])) {
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+
+      const rows = tableLines.filter((row) => !isTableSeparator(row)).map(parseTableRow);
+      const colCount = Math.max(1, ...rows.map((row) => row.length));
+      const colWidth = usableWidth / colCount;
+
+      rows.forEach((row, rowIndex) => {
+        const cells = Array.from({ length: colCount }, (_, colIndex) => row[colIndex] ?? '');
+        const wrappedCells = cells.map((cell) => doc.splitTextToSize(cell, colWidth - tableCellPadding * 2));
+        const maxLines = Math.max(1, ...wrappedCells.map((cellLines: string[]) => cellLines.length));
+        const rowHeight = maxLines * 12 + tableCellPadding * 2;
+
+        ensureRoom(rowHeight + 2);
+
+        cells.forEach((_, colIndex) => {
+          const x = margin + colIndex * colWidth;
+          doc.setDrawColor(190);
+          doc.rect(x, y, colWidth, rowHeight);
+
+          doc.setFont('helvetica', rowIndex === 0 ? 'bold' : 'normal');
+          doc.setFontSize(9);
+          const cellLines = wrappedCells[colIndex];
+          let cellY = y + tableCellPadding + 9;
+          cellLines.forEach((cellLine: string) => {
+            doc.text(cellLine, x + tableCellPadding, cellY);
+            cellY += 12;
+          });
+        });
+
+        y += rowHeight;
+      });
+
+      y += paragraphSpacing;
+      continue;
+    }
+
+    const headingMatch = raw.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const size = level <= 2 ? 13 : level === 3 ? 11 : 10;
+      writeWrappedText(stripInlineMarkdown(headingMatch[2]), margin, usableWidth, { bold: true, size });
+      index += 1;
+      continue;
+    }
+
+    const bulletMatch = line.match(/^(?:[-*]|\d+\.)\s+(.+)$/);
+    if (bulletMatch) {
+      writeWrappedText(`• ${bulletMatch[1]}`, margin + 8, usableWidth - 8, { size: 10 });
+      index += 1;
+      continue;
+    }
+
+    writeWrappedText(line, margin, usableWidth, { size: 10 });
+    index += 1;
+  }
+
+  doc.save(fileName);
+};
 
 function AssistantMessageComponent({ 
   message, 
@@ -214,6 +440,8 @@ function AssistantMessageComponent({
     renderCitation(annotation, index, count)
   );
 
+  const canDownloadReport = !isStreaming && message.content.trim().length > 0;
+
   
   return (
     <CopilotMessage
@@ -232,6 +460,19 @@ function AssistantMessageComponent({
           )}
           <div className={styles.metadataRow}>
             {timestamp && <span className={styles.timestamp}>{timestamp}</span>}
+            {canDownloadReport && (
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<ArrowDownload24Regular />}
+                onClick={() => downloadReportPdf(message.content)}
+                className={styles.downloadButton}
+                aria-label="Download report as PDF"
+                title="Download report as PDF"
+              >
+                PDF
+              </Button>
+            )}
             {message.more?.usage && (
               <UsageInfo 
                 info={message.more.usage} 

@@ -9,6 +9,7 @@ import { ChatService } from '../services/chatService';
 import { useAppContext } from '../contexts/AppContext';
 import { DocumentStandardsPanel } from './core/DocumentStandardsPanel';
 import { RoutingModePanel } from './core/RoutingModePanel';
+import type { AppError } from '../types/errors';
 import styles from './AgentPreview.module.css';
 
 interface AgentPreviewProps {
@@ -25,9 +26,11 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
   const { getAccessToken, signInAgain } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [standardsCollapseTrigger, setStandardsCollapseTrigger] = useState(0);
   const [highlightText, setHighlightText] = useState<string | string[] | null>(null);
   const [highlightFallbackText, setHighlightFallbackText] = useState<string | string[] | null>(null);
   const [highlightSeverity, setHighlightSeverity] = useState<string | null>(null);
+  const [preferredDocumentName, setPreferredDocumentName] = useState<string | null>(null);
   const [docRatio, setDocRatio] = useState(0.4);
   const [isDragging, setIsDragging] = useState(false);
   const [handleLeft, setHandleLeft] = useState<number | null>(null);
@@ -48,6 +51,14 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     return latest?.structured;
   }, [chat.messages]);
 
+  const latestAssistantAgentName = useMemo(() => {
+    const latestAssistant = [...chat.messages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && message.more?.agentName);
+
+    return latestAssistant?.more?.agentName?.toLowerCase() ?? '';
+  }, [chat.messages]);
+
   const latestAttachments = useMemo(() => {
     const latestMessage = [...chat.messages]
       .reverse()
@@ -62,7 +73,7 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     }
   }, [auth.status, chat.error?.code, dispatch]);
 
-  const displayError = useMemo(() => {
+  const displayError = useMemo<AppError | null>(() => {
     if (!chat.error) {
       return null;
     }
@@ -70,10 +81,9 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     if (auth.status === 'authenticated' && chat.error.code === 'AUTH') {
       return {
         ...chat.error,
-        code: 'SERVER',
+        code: 'SERVER' as const,
         message: 'You are signed in, but the request failed on the backend. Please retry in a moment.',
         recoverable: true,
-        action: undefined,
       };
     }
 
@@ -109,9 +119,29 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
     if (severity) {
       setHighlightSeverity(severity);
     }
+
+    const citationDocumentName = typeof task.citation_document_name === 'string'
+      ? task.citation_document_name.toLowerCase()
+      : '';
+    const evidence = typeof task.evidence === 'string' ? task.evidence.toLowerCase() : '';
+    const description = typeof task.description === 'string' ? task.description.toLowerCase() : '';
+
+    if (latestAssistantAgentName.includes('document-compliance-checker')) {
+      setPreferredDocumentName('bep');
+    } else if (citationDocumentName.includes('eir') || evidence.includes('eir:') || description.includes('eir')) {
+      setPreferredDocumentName('eir');
+    } else if (citationDocumentName.includes('air') || evidence.includes('air:') || description.includes('air')) {
+      setPreferredDocumentName('air');
+    } else if (evidence.includes('bep:') || description.includes('bep') || citationDocumentName.includes('bep')) {
+      setPreferredDocumentName('bep');
+    } else {
+      setPreferredDocumentName('bep');
+    }
   };
 
   const handleSendMessage = async (text: string, files?: File[]) => {
+    setStandardsCollapseTrigger((value) => value + 1);
+
     try {
       await chatService.sendMessage(
         text,
@@ -236,6 +266,7 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
               highlightText={highlightText}
               highlightFallbackText={highlightFallbackText}
               highlightSeverity={highlightSeverity}
+              preferredDocumentName={preferredDocumentName}
             />
           </div>
         </div>
@@ -278,7 +309,7 @@ export const AgentPreview: React.FC<AgentPreviewProps> = ({ agentId: _agentId, a
         <div className={styles.taskPanelInner}>
           <div className={styles.taskPanelScroll}>
             <RoutingModePanel />
-            <DocumentStandardsPanel collapseWhenViewingDocument={Boolean(latestAttachments && latestAttachments.length > 0)} />
+            <DocumentStandardsPanel collapseTrigger={standardsCollapseTrigger} />
             <TaskPanel
               tasks={latestStructured?.tasks ?? []}
               title="Tasks"

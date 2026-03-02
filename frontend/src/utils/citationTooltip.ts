@@ -33,7 +33,11 @@ export function extractStandardNumber(annotation?: IAnnotation): string | null {
 export function buildCitationTooltipText(index: number, annotation?: IAnnotation): string {
   const label = annotation?.label?.trim() || `Citation ${index}`;
   const standardNumber = extractStandardNumber(annotation);
-  const quote = annotation?.quote?.trim();
+  const quote = annotation?.quote
+    ?.replace(/<[^>]+>/g, ' ')
+    .replace(/\\n|\\r|\\t/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   const lines = [label];
 
@@ -43,7 +47,7 @@ export function buildCitationTooltipText(index: number, annotation?: IAnnotation
 
   if (quote) {
     lines.push('');
-    lines.push(`\"${quote.slice(0, 200)}${quote.length > 200 ? '...' : ''}\"`);
+    lines.push(`\"${quote.slice(0, 160)}${quote.length > 160 ? '...' : ''}\"`);
   }
 
   return lines.join('\n');

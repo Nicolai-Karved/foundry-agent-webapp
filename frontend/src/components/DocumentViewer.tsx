@@ -9,6 +9,7 @@ interface DocumentViewerProps {
   highlightText?: string | string[] | null;
   highlightFallbackText?: string | string[] | null;
   highlightSeverity?: string | null;
+  preferredDocumentName?: string | null;
 }
 
 const getMimeFromDataUri = (dataUri?: string): string => {
@@ -49,6 +50,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   highlightText,
   highlightFallbackText,
   highlightSeverity,
+  preferredDocumentName,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const highlightRef = useRef<HTMLSpanElement | null>(null);
@@ -70,6 +72,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   const files = attachments && attachments.length > 0 ? attachments : [];
   const selected = files[selectedIndex];
+
+  useEffect(() => {
+    if (!preferredDocumentName || files.length <= 1) return;
+
+    const preferred = preferredDocumentName.toLowerCase();
+    const nextIndex = files.findIndex((file) => file.fileName.toLowerCase().includes(preferred));
+    if (nextIndex >= 0 && nextIndex !== selectedIndex) {
+      setSelectedIndex(nextIndex);
+    }
+  }, [preferredDocumentName, files, selectedIndex]);
 
   const mimeType = getMimeFromDataUri(selected?.dataUri);
   const isPdf = mimeType === 'application/pdf';

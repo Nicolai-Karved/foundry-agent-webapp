@@ -55,6 +55,15 @@ public class StandardsPromptBuilder
         sb.AppendLine("- weights:");
         sb.AppendLine($"  - mandatory_weight = {mandatoryWeight}");
         sb.AppendLine($"  - non_mandatory_weight = {nonMandatoryWeight}");
+        sb.AppendLine("- verdict_to_points:");
+        sb.AppendLine("  - Pass = 1.0");
+        sb.AppendLine("  - Partial = 0.5");
+        sb.AppendLine("  - Fail = 0.0");
+        sb.AppendLine("  - NoEvidence = 0.0");
+        sb.AppendLine("  - NA = excluded from denominator");
+        sb.AppendLine("- score_formula:");
+        sb.AppendLine("  - weighted_score = (sum(points * weight)) / (sum(max_points * weight)) * 100");
+        sb.AppendLine("  - max_points for each in-scope requirement = 1.0");
         sb.AppendLine("- fail_thresholds:");
         sb.AppendLine($"  - critical_fails_immediate = {criticalFailsImmediate.ToString().ToLowerInvariant()}");
         sb.AppendLine($"  - max_major_before_fail = {maxMajorBeforeFail}");
@@ -64,8 +73,9 @@ public class StandardsPromptBuilder
         sb.AppendLine("Output requirements:");
         sb.AppendLine("- response must include:");
         sb.AppendLine("  1) Clarification Questions (separate section, not part of tasks array)");
-        sb.AppendLine("  2) Compliance Score (with calculation notes)");
+        sb.AppendLine("  2) Compliance Score (numeric 0-100 with calculation notes)");
         sb.AppendLine("  3) Structured List of Non-Compliant/Missing Topics");
+        sb.AppendLine("- do not output 'score cannot be computed'; if evidence is limited, still compute using available in-scope tasks and explain assumptions");
         sb.AppendLine("- every finding must include citations grounded in the clauses below");
         sb.AppendLine("- populate citation_document_name and citation fields for each task");
         sb.AppendLine("- do NOT render run metadata (e.g., run_id, internal diagnostics) in user-facing output");
@@ -140,6 +150,12 @@ public class StandardsPromptBuilder
         sb.AppendLine("{");
         sb.AppendLine("  \"document_name\": \"<uploaded document name>\",");
         sb.AppendLine("  \"id\": \"<uuid>\",");
+        sb.AppendLine("  \"overall_verdict\": \"Pass|Fail|NeedsClarification\",");
+        sb.AppendLine("  \"compliance_score\": {");
+        sb.AppendLine("    \"value\": " + "<number 0-100>" + ",");
+        sb.AppendLine("    \"method\": \"weighted_by_priority\",");
+        sb.AppendLine("    \"calculation_notes\": \"<short formula + assumptions>\"");
+        sb.AppendLine("  },");
         sb.AppendLine("  \"response\": \"full evaluation including score + findings + clarification questions\",");
         sb.AppendLine("  \"tasks\": [");
         sb.AppendLine("    {");
@@ -161,6 +177,7 @@ public class StandardsPromptBuilder
         sb.AppendLine("    }");
         sb.AppendLine("  ]");
         sb.AppendLine("}");
+        sb.AppendLine("- Always compute and return compliance_score.value using the tasks array as denominator (exclude NA). Do not return 'cannot be computed'.");
         sb.AppendLine("- Do not include internal requirement IDs in name, description, evidence, or remediation text.");
         sb.AppendLine();
         sb.AppendLine("Requirements:");
@@ -178,6 +195,43 @@ public class StandardsPromptBuilder
             sb.AppendLine($"[standard_id: {requirement.StandardId} | clause_ref: {clauseRef} | source_doc: {requirement.SourceDoc}]");
             sb.AppendLine(requirement.RequirementText);
         }
+
+        return sb.ToString();
+    }
+
+    public string BuildStructuredOutputContractPrompt()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("STRUCTURED_OUTPUT_CONTRACT");
+        sb.AppendLine();
+        sb.AppendLine("Output MUST be valid JSON only (no markdown, no prose wrapper).");
+        sb.AppendLine("Required JSON schema:");
+        sb.AppendLine("{");
+        sb.AppendLine("  \"document_name\": \"<uploaded document name>\",");
+        sb.AppendLine("  \"id\": \"<uuid>\",");
+        sb.AppendLine("  \"response\": \"summary including score + findings + clarification questions\",");
+        sb.AppendLine("  \"tasks\": [");
+        sb.AppendLine("    {");
+        sb.AppendLine("      \"id\": \"<uuid>\",");
+        sb.AppendLine("      \"name\": \"<short task name>\",");
+        sb.AppendLine("      \"standard_id\": \"<standard id>\",");
+        sb.AppendLine("      \"clause_ref\": \"<clause ref>\",");
+        sb.AppendLine("      \"standard_reference\": \"<standard id + clause ref>\",");
+        sb.AppendLine("      \"requirement_text\": \"<requirement text>\",");
+        sb.AppendLine("      \"verdict\": \"Pass|Partial|Fail|NA|Unknown|NoEvidence\",");
+        sb.AppendLine("      \"severity\": \"critical|major|minor|info\",");
+        sb.AppendLine("      \"evidence\": \"<exact quote from uploaded document or N/A>\",");
+        sb.AppendLine("      \"citation_document_name\": \"<standards source or N/A>\",");
+        sb.AppendLine("      \"citation\": \"<standards clause/quote or N/A>\",");
+        sb.AppendLine("      \"document_reference\": \"<page/section/key from uploaded doc if known>\",");
+        sb.AppendLine("      \"reference\": [\"<exact triggering text from uploaded document>\"],");
+        sb.AppendLine("      \"description\": \"<what is missing/non-compliant and why>\",");
+        sb.AppendLine("      \"remediation\": \"<what to add/fix if missing>\"");
+        sb.AppendLine("    }");
+        sb.AppendLine("  ]");
+        sb.AppendLine("}");
+        sb.AppendLine("The tasks array must contain actionable compliance tasks only.");
+        sb.AppendLine("Do not include run metadata, diagnostics, or internal notes.");
 
         return sb.ToString();
     }

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button, makeStyles, tokens } from '@fluentui/react-components';
 import { ChevronDown20Regular, ChevronRight20Regular } from '@fluentui/react-icons';
 import { StandardsSelector } from './StandardsSelector';
@@ -9,8 +9,13 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: '14px',
     backgroundColor: tokens.colorNeutralBackground1,
-    overflow: 'hidden',
+    overflow: 'visible',
     boxShadow: tokens.shadow8,
+    display: 'flex',
+    flexDirection: 'column',
+    height: 'auto',
+    minHeight: 'fit-content',
+    flex: '0 0 auto',
   },
   header: {
     display: 'flex',
@@ -48,20 +53,16 @@ const useStyles = makeStyles({
 
 interface DocumentStandardsPanelProps {
   collapseWhenViewingDocument?: boolean;
+  collapseTrigger?: number;
 }
 
 export const DocumentStandardsPanel: React.FC<DocumentStandardsPanelProps> = ({
-  collapseWhenViewingDocument = false,
+  collapseWhenViewingDocument: _collapseWhenViewingDocument = false,
+  collapseTrigger = 0,
 }) => {
   const styles = useStyles();
   const { settings } = useAppState();
   const [expanded, setExpanded] = useState(true);
-
-  useEffect(() => {
-    if (collapseWhenViewingDocument) {
-      setExpanded(false);
-    }
-  }, [collapseWhenViewingDocument]);
 
   const selected = settings.selectedStandards;
 
@@ -75,6 +76,12 @@ export const DocumentStandardsPanel: React.FC<DocumentStandardsPanelProps> = ({
       ].join('\n'),
     }));
   }, [selected]);
+
+  useEffect(() => {
+    if (collapseTrigger > 0) {
+      setExpanded(false);
+    }
+  }, [collapseTrigger]);
 
   return (
     <section className={styles.panel} aria-label="Applicable standards">

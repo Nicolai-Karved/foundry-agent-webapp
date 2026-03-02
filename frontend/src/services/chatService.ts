@@ -732,14 +732,19 @@ export class ChatService {
       }
     }
 
-    if (!parsed) return null;
+    if (!parsed) {
+      return this.parseMarkdownStructuredResponse(trimmed);
+    }
 
-    const response = typeof parsed.response === 'string' ? parsed.response : null;
+    const explicitTasks = this.extractTaskCandidates(parsed);
+
+    const response = this.getTaskText(parsed, ['response', 'summary', 'analysis', 'result', 'message'])
+      ?? (explicitTasks.length > 0 ? this.buildResponseFromTasks(explicitTasks) : null);
     if (!response) return null;
 
-    const tasks = Array.isArray(parsed.tasks)
-      ? parsed.tasks.filter((task) => task && typeof task === 'object') as Array<Record<string, unknown>>
-      : [];
+    const tasks = explicitTasks.length > 0
+      ? explicitTasks
+      : this.extractMarkdownTaskCandidates(response);
 
     const clarificationTasks = tasks.filter((task) => this.isClarificationTask(task));
     const documentName = typeof parsed.document_name === 'string' ? parsed.document_name : undefined;
@@ -759,10 +764,298 @@ export class ChatService {
     };
   }
 
+  private parseMarkdownStructuredResponse(content: string): IStructuredResponse | null {
+    const normalized = this.stripInternalRunMetadata(content);
+    if (!normalized) {
+      return null;
+    }
+
+    const appearsToBeComplianceReport =
+      /compliance|non-compliant|overall score|remediation/i.test(normalized)
+      && (/^##+\s+/m.test(normalized) || /\bstatus\s*:/i.test(normalized));
+
+    if (!appearsToBeComplianceReport) {
+      return null;
+    }
+
+    const tasks = this.extractMarkdownTaskCandidates(normalized)
+      .map((task) => this.normalizeGroundingFields(task, undefined, { label: 'AIR/EIR document' }))
+      .map((task) => this.applyGroundingGuard(task));
+
+    return {
+      response: normalized,
+      tasks,
+      raw: {
+        response: normalized,
+      },
+    };
+  }
+
+  private extractTaskCandidates(parsed: Record<string, unknown>): Array<Record<string, unknown>> {
+    const candidateKeys = [
+      'tasks',
+      'findings',
+      'issues',
+      'recommendations',
+      'non_compliant_topics',
+      'nonCompliantTopics',
+      'action_items',
+      'actionItems',
+    ];
+
+    for (const key of candidateKeys) {
+      const value = parsed[key];
+      if (Array.isArray(value)) {
+        const items = value
+          .filter((task) => task && typeof task === 'object') as Array<Record<string, unknown>>;
+        if (items.length > 0) {
+          return items;
+        }
+      }
+    }
+
+    return [];
+  }
+
+  private extractMarkdownTaskCandidates(response: string): Array<Record<string, unknown>> {
+    const content = response.trim();
+    if (!content) {
+      return [];
+    }
+
+    const headingRegex = /^##+\s+(.+)$/gm;
+    const headings: Array<{ title: string; start: number; end: number }> = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = headingRegex.exec(content)) !== null) {
+      headings.push({
+        title: match[1].trim(),
+        start: match.index,
+        end: headingRegex.lastIndex,
+      });
+    }
+
+    if (headings.length === 0) {
+      return [];
+    }
+
+    const tasks: Array<Record<string, unknown>> = [];
+
+    for (let index = 0; index < headings.length; index += 1) {
+      const current = headings[index];
+      const next = headings[index + 1];
+      const sectionStart = current.end;
+      const sectionEnd = next ? next.start : content.length;
+      const sectionBody = content.slice(sectionStart, sectionEnd).trim();
+
+      const normalizedTitle = this.stripMarkdownDecorators(current.title);
+      if (!sectionBody || !normalizedTitle) {
+        continue;
+      }
+
+      if (/overall score|executive summary|detailed findings/i.test(normalizedTitle)) {
+        continue;
+      }
+
+      const status =
+        this.extractLabeledMarkdownValue(sectionBody, 'Status')
+        ?? this.inferStatusFromHeading(normalizedTitle)
+        ?? this.inferStatusFromBody(sectionBody);
+      if (!status) {
+        continue;
+      }
+
+      const airFinding = this.extractLabeledMarkdownValue(sectionBody, 'AIR');
+      const eirFinding = this.extractLabeledMarkdownValue(sectionBody, 'EIR');
+      const bepFinding = this.extractLabeledMarkdownValue(sectionBody, 'BEP');
+      const impact = this.extractLabeledMarkdownValue(sectionBody, 'Impact');
+
+      const citationDocumentName = eirFinding
+        ? 'EIR document'
+        : airFinding
+          ? 'AIR document'
+          : 'AIR/EIR document';
+
+      const citation = eirFinding ?? airFinding ?? impact ?? status;
+
+      const evidenceParts = [
+        airFinding ? `AIR: ${airFinding}` : null,
+        eirFinding ? `EIR: ${eirFinding}` : null,
+        bepFinding ? `BEP: ${bepFinding}` : null,
+        impact ? `Impact: ${impact}` : null,
+      ].filter((value): value is string => Boolean(value));
+
+      const severity = this.mapStatusToSeverity(status);
+      const title = `${normalizedTitle}: ${status}`;
+
+      tasks.push({
+        id: `markdown-task-${tasks.length + 1}`,
+        name: title,
+        severity,
+        verdict: status,
+        description: impact ?? `${normalizedTitle} requires correction to align BEP with AIR/EIR expectations.`,
+        requirement_text: airFinding ?? eirFinding ?? 'Align BEP content with governing AIR/EIR requirements.',
+        evidence: evidenceParts.join('\n'),
+        citation_document_name: citationDocumentName,
+        citation,
+        document_reference: bepFinding ?? impact ?? normalizedTitle,
+        reference: [bepFinding, airFinding, eirFinding, impact, normalizedTitle].filter((value): value is string => Boolean(value && value.trim())),
+        remediation: this.buildRemediationFromStatus(status, normalizedTitle),
+      });
+    }
+
+    return tasks;
+  }
+
+  private extractLabeledMarkdownValue(section: string, label: string): string | null {
+    const pattern = new RegExp(
+      `(?:^|\\n)\\s*(?:[-*]\\s+)?(?:\\d+\\.\\s+)?(?:\\*\\*)?${label}(?:\\*\\*)?\\s*:\\s*(.+?)(?=(?:\\n\\s*(?:[-*]\\s+)?(?:\\d+\\.\\s+)?(?:\\*\\*)?[A-Za-z][A-Za-z\\s\\-/]+(?:\\*\\*)?\\s*:)|\\n##+|$)`,
+      'is'
+    );
+
+    const match = section.match(pattern);
+    if (!match || !match[1]) {
+      return null;
+    }
+
+    const cleaned = this.stripMarkdownDecorators(match[1]);
+    return cleaned || null;
+  }
+
+  private stripMarkdownDecorators(value: string): string {
+    return value
+      .replace(/`/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/\[(.*?)\]\([^)]*\)/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private mapStatusToSeverity(status: string): string {
+    const normalized = status.toLowerCase();
+    if (normalized.includes('non-compliant') || normalized.includes('high risk')) {
+      return 'major';
+    }
+
+    if (normalized.includes('inconsistent') || normalized.includes('partial')) {
+      return 'medium';
+    }
+
+    if (normalized.includes('aligned') || normalized.includes('compliant')) {
+      return 'minor';
+    }
+
+    return 'medium';
+  }
+
+  private inferStatusFromHeading(heading: string): string | null {
+    const normalized = heading.toLowerCase();
+
+    if (normalized.includes('non-compliant') || normalized.includes('conflict') || normalized.includes('critical')) {
+      return 'Non-compliant';
+    }
+
+    if (normalized.includes('partially aligned') || normalized.includes('partial')) {
+      return 'Partial';
+    }
+
+    if (normalized.includes('compliant') || normalized.includes('aligned')) {
+      return 'Compliant';
+    }
+
+    return null;
+  }
+
+  private inferStatusFromBody(body: string): string | null {
+    const normalized = body.toLowerCase();
+
+    if (/\bnon-compliant\b|\bhigh non-compliance risk\b/.test(normalized)) {
+      return 'Non-compliant';
+    }
+
+    if (/\bpartially aligned\b|\bpartial\b|\binconsistent\b/.test(normalized)) {
+      return 'Partial';
+    }
+
+    if (/\bgenerally aligned\b|\bcompliant\b|\baligned\b/.test(normalized)) {
+      return 'Compliant';
+    }
+
+    return null;
+  }
+
+  private buildRemediationFromStatus(status: string, area: string): string {
+    const normalized = status.toLowerCase();
+
+    if (normalized.includes('non-compliant') || normalized.includes('high risk')) {
+      return `Update the BEP section for ${area} to explicitly match AIR/EIR requirements and cite the governing AIR or EIR clause.`;
+    }
+
+    if (normalized.includes('inconsistent') || normalized.includes('partial')) {
+      return `Clarify ${area} in the BEP so it is fully consistent with AIR/EIR terminology, data requirements, and delivery responsibilities.`;
+    }
+
+    return `Retain alignment for ${area} and include explicit AIR/EIR citations in the BEP for auditability.`;
+  }
+
+  private buildResponseFromTasks(tasks: Array<Record<string, unknown>>): string {
+    if (tasks.length === 0) {
+      return 'Structured compliance analysis generated.';
+    }
+
+    const severityBuckets = {
+      critical: 0,
+      major: 0,
+      medium: 0,
+      minor: 0,
+      info: 0,
+      unknown: 0,
+    };
+
+    tasks.forEach((task) => {
+      const severity = (this.getTaskText(task, ['severity']) ?? '').toLowerCase();
+      if (severity === 'critical' || severity === 'high') {
+        severityBuckets.critical += 1;
+      } else if (severity === 'major') {
+        severityBuckets.major += 1;
+      } else if (severity === 'medium') {
+        severityBuckets.medium += 1;
+      } else if (severity === 'minor' || severity === 'low') {
+        severityBuckets.minor += 1;
+      } else if (severity === 'info' || severity === 'informational') {
+        severityBuckets.info += 1;
+      } else {
+        severityBuckets.unknown += 1;
+      }
+    });
+
+    const topFindings = tasks
+      .slice(0, 5)
+      .map((task) => {
+        const name = this.getTaskText(task, ['name']) ?? 'Unnamed finding';
+        const description = this.getTaskText(task, ['description']) ?? '';
+        const citation = this.getTaskText(task, ['citation']) ?? this.getTaskText(task, ['document_reference']) ?? '';
+        const citationSuffix = citation ? ` (${citation})` : '';
+        return `- ${name}${description ? `: ${description}` : ''}${citationSuffix}`;
+      })
+      .join('\n');
+
+    return [
+      '## Compliance evaluation summary',
+      '',
+      `Total findings: ${tasks.length}`,
+      `Severity mix: critical/high ${severityBuckets.critical}, major ${severityBuckets.major}, medium ${severityBuckets.medium}, minor/low ${severityBuckets.minor}, info ${severityBuckets.info}.`,
+      '',
+      '### Highest-impact findings',
+      topFindings,
+    ].join('\n');
+  }
+
   private normalizeGroundingFields(
     task: Record<string, unknown>,
     documentName?: string,
-    standardsCitationSeed?: { label?: string; quote?: string }
+    standardsCitationSeed?: { label?: string }
   ): Record<string, unknown> {
     const normalized = { ...task };
 
@@ -790,15 +1083,29 @@ export class ChatService {
         normalized.citation = standardReference;
       } else if (this.hasGroundedCitation(clauseRef)) {
         normalized.citation = clauseRef;
-      } else if (this.hasGroundedCitation(standardsCitationSeed?.quote ?? null)) {
-        normalized.citation = standardsCitationSeed?.quote;
       }
+    }
+
+    const sanitizedCitationDocumentName = this.sanitizeCitationField(
+      this.getTaskText(normalized, ['citation_document_name']),
+      120
+    );
+    if (this.hasGroundedCitation(sanitizedCitationDocumentName)) {
+      normalized.citation_document_name = sanitizedCitationDocumentName;
+    }
+
+    const sanitizedCitation = this.sanitizeCitationField(
+      this.getTaskText(normalized, ['citation']),
+      220
+    );
+    if (this.hasGroundedCitation(sanitizedCitation)) {
+      normalized.citation = sanitizedCitation;
     }
 
     return normalized;
   }
 
-  private getStandardsCitationSeed(annotations: IAnnotation[]): { label?: string; quote?: string } {
+  private getStandardsCitationSeed(annotations: IAnnotation[]): { label?: string } {
     const standardsAnnotation = annotations.find((annotation) => {
       const text = `${annotation.label ?? ''} ${annotation.quote ?? ''} ${annotation.standardNumber ?? ''}`.toLowerCase();
       return /\b(iso\s*19650|bs\s*en\s*iso\s*19650|pd\s*19650|standard|clause)\b/.test(text);
@@ -810,15 +1117,44 @@ export class ChatService {
 
     return {
       label: standardsAnnotation.standardNumber ?? standardsAnnotation.label,
-      quote: standardsAnnotation.quote,
     };
+  }
+
+  private sanitizeCitationField(value: string | null, maxLength: number): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const sanitized = value
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\\n|\\r|\\t/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!sanitized) {
+      return null;
+    }
+
+    if (sanitized.length > maxLength) {
+      return `${sanitized.slice(0, maxLength).trimEnd()}…`;
+    }
+
+    return sanitized;
   }
 
   private applyGroundingGuard(task: Record<string, unknown>): Record<string, unknown> {
     const citationDocumentName = this.getTaskText(task, ['citation_document_name']);
     const citation = this.getTaskText(task, ['citation']);
+    const documentReference = this.getTaskText(task, ['document_reference', 'reference']);
+    const evidence = this.getTaskText(task, ['evidence']);
 
-    if (!this.hasGroundedCitation(citationDocumentName) || !this.hasGroundedCitation(citation)) {
+    const hasStandardsGrounding =
+      this.hasGroundedCitation(citationDocumentName) && this.hasGroundedCitation(citation);
+
+    const hasDocumentGrounding =
+      this.hasGroundedCitation(documentReference) || this.hasGroundedCitation(evidence);
+
+    if (!hasStandardsGrounding && !hasDocumentGrounding) {
       return {
         ...task,
         name: 'Ungrounded finding rejected',
