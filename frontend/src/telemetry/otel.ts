@@ -28,7 +28,7 @@ if (tracingEnabled && typeof window !== 'undefined') {
 
   const provider = new WebTracerProvider({ resource });
   provider.addSpanProcessor(new BatchSpanProcessor(
-    new OTLPTraceExporter({ endpoint: exporterEndpoint })
+    new OTLPTraceExporter({ url: exporterEndpoint })
   ));
 
   provider.register({

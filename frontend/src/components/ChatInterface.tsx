@@ -40,14 +40,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = (props) => {
   const isStreaming = status === 'streaming';
   const isBusy = disabled || ['sending', 'streaming'].includes(status);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  };
-
-  useEffect(() => {
-    return undefined;
-  }, [messages]);
-
   // Announce streaming status changes to screen readers
   useEffect(() => {
     if (isStreaming) {

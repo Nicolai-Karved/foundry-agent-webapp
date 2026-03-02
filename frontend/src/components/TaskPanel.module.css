@@ -55,6 +55,7 @@
   box-sizing: border-box;
   text-align: left;
   cursor: default;
+  -webkit-user-select: text;
   user-select: text;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
@@ -70,11 +71,20 @@
   box-shadow: var(--shadow8);
 }
 
+.taskCardResolved {
+  opacity: 0.62;
+  background-color: var(--colorNeutralBackground2);
+}
+
 .taskHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
   cursor: pointer;
 }
 
@@ -129,6 +139,33 @@
   flex-direction: column;
   gap: 10px;
   cursor: text;
+}
+
+.taskActions {
+  display: flex;
+  gap: 8px;
+}
+
+.taskActionButton {
+  border: 1px solid var(--colorNeutralStroke2);
+  background-color: var(--colorNeutralBackground1);
+  color: var(--colorNeutralForeground2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.taskActionButtonActive {
+  border-color: var(--colorPaletteGreenBorder1);
+  color: var(--colorPaletteGreenForeground1);
+  background-color: var(--colorPaletteGreenBackground1);
+}
+
+.taskActionButtonRejected {
+  border-color: var(--colorPaletteRedBorder1);
+  color: var(--colorPaletteRedForeground1);
+  background-color: var(--colorPaletteRedBackground1);
 }
 
 .field {

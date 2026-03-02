@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StructuredTask } from '../types/chat';
 import styles from './TaskPanel.module.css';
 
@@ -191,6 +191,24 @@ const getSeverityClass = (severity: string) => {
   return styles.severityNeutral;
 };
 
+type TaskResolution = 'open' | 'done' | 'rejected';
+
+const severityRank = (severity: string): number => {
+  const normalized = severity.toLowerCase();
+  if (normalized === 'critical' || normalized === 'high') return 0;
+  if (normalized === 'major') return 1;
+  if (normalized === 'medium') return 2;
+  if (normalized === 'minor' || normalized === 'low') return 3;
+  if (normalized === 'info' || normalized === 'informational') return 4;
+  return 5;
+};
+
+const resolutionRank = (resolution: TaskResolution): number => {
+  if (resolution === 'open') return 0;
+  if (resolution === 'done') return 1;
+  return 2;
+};
+
 export const TaskPanel: React.FC<TaskPanelProps> = ({
   tasks,
   title = 'Tasks',
@@ -198,7 +216,26 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   selectedTaskId,
   onSelectTask,
 }) => {
-  const taskRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const taskRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [taskResolutionById, setTaskResolutionById] = useState<Record<string, TaskResolution>>({});
+
+  useEffect(() => {
+    setTaskResolutionById((previous) => {
+      const nextState: Record<string, TaskResolution> = {};
+      tasks.forEach((task, index) => {
+        const id = getTaskId(task, index);
+        nextState[id] = previous[id] ?? 'open';
+      });
+
+      const prevKeys = Object.keys(previous);
+      const nextKeys = Object.keys(nextState);
+      const isSame =
+        prevKeys.length === nextKeys.length
+        && nextKeys.every((key) => previous[key] === nextState[key]);
+
+      return isSame ? previous : nextState;
+    });
+  }, [tasks]);
 
   useEffect(() => {
     if (!selectedTaskId) return;
@@ -208,33 +245,80 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
     }
   }, [selectedTaskId]);
 
+  const sortedTasks = useMemo(() => {
+    return tasks
+      .map((task, index) => ({ task, index, id: getTaskId(task, index) }))
+      .sort((left, right) => {
+        const leftResolution = taskResolutionById[left.id] ?? 'open';
+        const rightResolution = taskResolutionById[right.id] ?? 'open';
+
+        const byResolution = resolutionRank(leftResolution) - resolutionRank(rightResolution);
+        if (byResolution !== 0) {
+          return byResolution;
+        }
+
+        const bySeverity = severityRank(getSeverity(left.task)) - severityRank(getSeverity(right.task));
+        if (bySeverity !== 0) {
+          return bySeverity;
+        }
+
+        return left.index - right.index;
+      });
+  }, [tasks, taskResolutionById]);
+
   const taskCards = useMemo(() => {
-    return tasks.map((task, index) => {
-      const taskId = getTaskId(task, index);
+    return sortedTasks.map(({ task, id: taskId }) => {
       const isSelected = selectedTaskId === taskId;
       const name = getTaskName(task);
       const severity = getSeverity(task);
       const severityClass = getSeverityClass(severity);
       const entries = getTaskEntries(task).filter(([key]) => key !== 'name' && key !== 'severity');
+      const resolution = taskResolutionById[taskId] ?? 'open';
+      const isResolved = resolution !== 'open';
+
+      const markTask = (nextResolution: TaskResolution) => {
+        setTaskResolutionById((previous) => ({
+          ...previous,
+          [taskId]: nextResolution,
+        }));
+      };
 
       return (
-        <button
+        <div
           key={taskId}
-          type="button"
           ref={(node) => {
             if (node) {
               taskRefs.current.set(taskId, node);
             }
           }}
-          className={`${styles.taskCard} ${isSelected ? styles.taskCardActive : ''}`}
-          onClick={() => onSelectTask?.(task, getDocumentReference(task), getReference(task), severity)}
+          className={`${styles.taskCard} ${isSelected ? styles.taskCardActive : ''} ${isResolved ? styles.taskCardResolved : ''}`}
         >
-          <div className={styles.taskHeader}>
+          <button
+            type="button"
+            className={styles.taskHeader}
+            onClick={() => onSelectTask?.(task, getDocumentReference(task), getReference(task), severity)}
+          >
             <span className={styles.taskName}>{name}</span>
             <span className={`${styles.severityTag} ${severityClass}`}>{severity}</span>
-          </div>
+          </button>
           {isSelected && (
             <div className={styles.taskDetails}>
+              <div className={styles.taskActions}>
+                <button
+                  type="button"
+                  className={`${styles.taskActionButton} ${resolution === 'done' ? styles.taskActionButtonActive : ''}`}
+                  onClick={() => markTask(resolution === 'done' ? 'open' : 'done')}
+                >
+                  {resolution === 'done' ? 'Undo done' : 'Mark done'}
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.taskActionButton} ${resolution === 'rejected' ? styles.taskActionButtonRejected : ''}`}
+                  onClick={() => markTask(resolution === 'rejected' ? 'open' : 'rejected')}
+                >
+                  {resolution === 'rejected' ? 'Undo rejection' : 'Reject'}
+                </button>
+              </div>
               {entries.map(([key, value]) => (
                 <div key={`${taskId}-${key}`} className={styles.field}>
                   <div className={styles.label}>{formatKeyLabel(key)}</div>
@@ -243,10 +327,10 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               ))}
             </div>
           )}
-        </button>
+        </div>
       );
     });
-  }, [tasks, selectedTaskId, onSelectTask]);
+  }, [sortedTasks, selectedTaskId, onSelectTask, taskResolutionById]);
 
   return (
     <div className={styles.panel}>

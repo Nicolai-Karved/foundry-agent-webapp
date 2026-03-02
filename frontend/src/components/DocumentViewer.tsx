@@ -69,19 +69,40 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const lastReferenceKey = useRef<string>('');
   const lastManualKey = useRef<string>('');
   const lastManualIndex = useRef<number>(0);
+  const lastAutoSelectionKey = useRef<string>('');
 
   const files = attachments && attachments.length > 0 ? attachments : [];
   const selected = files[selectedIndex];
 
   useEffect(() => {
+    if (files.length === 0) {
+      if (selectedIndex !== 0) {
+        setSelectedIndex(0);
+      }
+      return;
+    }
+
+    if (selectedIndex >= files.length) {
+      setSelectedIndex(0);
+    }
+  }, [files, selectedIndex]);
+
+  useEffect(() => {
     if (!preferredDocumentName || files.length <= 1) return;
 
     const preferred = preferredDocumentName.toLowerCase();
-    const nextIndex = files.findIndex((file) => file.fileName.toLowerCase().includes(preferred));
-    if (nextIndex >= 0 && nextIndex !== selectedIndex) {
-      setSelectedIndex(nextIndex);
+    const autoSelectionKey = `${preferred}|${files.map((file) => file.fileName.toLowerCase()).join('|')}`;
+
+    if (lastAutoSelectionKey.current === autoSelectionKey) {
+      return;
     }
-  }, [preferredDocumentName, files, selectedIndex]);
+
+    const nextIndex = files.findIndex((file) => file.fileName.toLowerCase().includes(preferred));
+    if (nextIndex >= 0) {
+      setSelectedIndex(nextIndex);
+      lastAutoSelectionKey.current = autoSelectionKey;
+    }
+  }, [preferredDocumentName, files]);
 
   const mimeType = getMimeFromDataUri(selected?.dataUri);
   const isPdf = mimeType === 'application/pdf';
@@ -110,7 +131,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
     const loadPdf = async () => {
       try {
-        const response = await fetch(selected.dataUri);
+        const dataUri = selected?.dataUri;
+        if (!dataUri) {
+          setPdfError('Preview not available for this file type.');
+          setPdfLoading(false);
+          return;
+        }
+
+        const response = await fetch(dataUri);
         if (!response.ok) {
           throw new Error('Failed to fetch PDF data.');
         }
@@ -421,8 +449,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const highlightedContent = useMemo(() => {
     if (!textContent) return { before: textContent, match: '', after: '' };
     if (!highlightText) return { before: textContent, match: '', after: '' };
+    const searchTerm = Array.isArray(highlightText) ? (highlightText[0] ?? '') : highlightText;
+    if (!searchTerm.trim()) return { before: textContent, match: '', after: '' };
     const lower = textContent.toLowerCase();
-    const search = highlightText.toLowerCase();
+    const search = searchTerm.toLowerCase();
     const index = lower.indexOf(search);
     if (index < 0) return { before: textContent, match: '', after: '' };
     return {

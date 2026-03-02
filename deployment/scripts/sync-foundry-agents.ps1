@@ -18,6 +18,7 @@ if ([string]::IsNullOrWhiteSpace($ProjectEndpoint)) {
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $promptsPath = Join-Path $repoRoot 'docs/agent-prompts'
+$sharedPromptFile = Join-Path $promptsPath '_shared-core.md'
 
 $tokenData = az account get-access-token --resource 'https://ai.azure.com' 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0) {
@@ -33,6 +34,12 @@ if ([string]::IsNullOrWhiteSpace($Model)) {
     $Model = $default.versions.latest.definition.model
 }
 if ([string]::IsNullOrWhiteSpace($Model)) { $Model = 'gpt-5.2' }
+
+if (-not (Test-Path $sharedPromptFile)) {
+    throw "Shared prompt file not found: $sharedPromptFile"
+}
+
+$sharedInstructions = (Get-Content -Raw -Path $sharedPromptFile).Trim()
 
 $specs = @(
     @{
@@ -79,7 +86,12 @@ foreach ($spec in $specs) {
         throw "Prompt file not found: $promptFile"
     }
 
-    $instructions = Get-Content -Raw -Path $promptFile
+    $agentSpecificInstructions = (Get-Content -Raw -Path $promptFile).Trim()
+    $instructions = @(
+        $sharedInstructions
+        ''
+        $agentSpecificInstructions
+    ) -join [Environment]::NewLine
 
     $payload = @{
         name = $name

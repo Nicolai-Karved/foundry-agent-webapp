@@ -211,6 +211,10 @@ export class ChatService {
       return 'bep';
     }
 
+    if (hasAirFile && hasEirFile && !hasBepFile) {
+      return undefined;
+    }
+
     if (hasEirFile) {
       return 'eir';
     }
@@ -442,6 +446,7 @@ export class ChatService {
     let structuredBuffer = '';
     let structuredMode = false;
     let placeholderSet = false;
+    let chunkCount = 0;
     const collectedAnnotations: IAnnotation[] = [];
     const autoApproveMcp = false;
 
@@ -558,6 +563,7 @@ export class ChatService {
             case 'chunk':
               if (typeof event.data.content === 'string') {
                 structuredBuffer += event.data.content;
+                chunkCount += 1;
               }
 
               if (!structuredMode && this.isStructuredCandidate(structuredBuffer)) {
@@ -576,6 +582,19 @@ export class ChatService {
                   content: event.data.content,
                 });
                 lastChunkContent = event.data.content;
+              }
+
+              if (chunkCount % 12 === 0 && structuredBuffer.trim().length > 0) {
+                const progressiveStructured = this.parseMarkdownStructuredResponse(structuredBuffer);
+                if (progressiveStructured && progressiveStructured.tasks.length > 0) {
+                  this.dispatch({
+                    type: 'CHAT_SET_MESSAGE_STRUCTURED',
+                    messageId,
+                    content: this.stripInternalRunMetadata(structuredBuffer),
+                    structured: progressiveStructured,
+                    annotations: collectedAnnotations.length > 0 ? collectedAnnotations : undefined,
+                  });
+                }
               }
               break;
 
@@ -1065,6 +1084,26 @@ export class ChatService {
     const standardId = this.getTaskText(normalized, ['standard_id', 'standardId', 'standard_number', 'standardNumber']);
     const standardReference = this.getTaskText(normalized, ['standard_reference', 'standardReference']);
     const clauseRef = this.getTaskText(normalized, ['clause_ref', 'clauseRef']);
+    const evidence = this.getTaskText(normalized, ['evidence']);
+    const description = this.getTaskText(normalized, ['description']);
+
+    const documentReference = this.getTaskText(normalized, ['document_reference', 'documentReference']);
+    if (!this.hasGroundedCitation(documentReference)) {
+      if (this.hasGroundedCitation(evidence)) {
+        normalized.document_reference = evidence;
+      } else if (this.hasGroundedCitation(description)) {
+        normalized.document_reference = description;
+      }
+    }
+
+    const reference = this.getTaskText(normalized, ['reference']);
+    if (!this.hasGroundedCitation(reference)) {
+      if (this.hasGroundedCitation(evidence)) {
+        normalized.reference = [evidence];
+      } else if (this.hasGroundedCitation(description)) {
+        normalized.reference = [description];
+      }
+    }
 
     if (!this.hasGroundedCitation(citationDocumentName)) {
       if (this.hasGroundedCitation(standardId)) {

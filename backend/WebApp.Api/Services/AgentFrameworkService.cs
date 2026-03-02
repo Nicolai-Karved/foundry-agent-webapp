@@ -1173,9 +1173,14 @@ public class AgentFrameworkService : IDisposable
         var hasEirFile = normalizedFileNames.Any(name => name.Contains("eir", StringComparison.Ordinal));
         var hasBepFile = normalizedFileNames.Any(name => name.Contains("bep", StringComparison.Ordinal));
 
-        if (hasBepFile && (hasAirFile || hasEirFile))
+        if (hasBepFile && hasAirFile && hasEirFile)
         {
-            return new RouteDecision(AgentRoute.Bep, "filename_combo:bep+air_or_eir");
+            return new RouteDecision(AgentRoute.Bep, "filename_combo:air+eir+bep");
+        }
+
+        if (hasAirFile && hasEirFile && !hasBepFile)
+        {
+            return new RouteDecision(AgentRoute.Default, "filename_combo:air+eir");
         }
 
         if (hasEirFile)

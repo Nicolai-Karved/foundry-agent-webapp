@@ -54,18 +54,6 @@ const getShortReportTitle = (content: string): string => {
   return sanitizeFilenamePart(firstLine ?? 'report');
 };
 
-const convertMarkdownToPlainText = (content: string): string => {
-  return content
-    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, ''))
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*/g, '')
-    .replace(/\*/g, '')
-    .replace(/`/g, '')
-    .replace(/\[(.*?)\]\((.*?)\)/g, '$1 ($2)')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-};
-
 const normalizePdfText = (value: string): string => {
   return value
     .replace(/\u0000/g, '')
