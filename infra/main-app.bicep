@@ -8,14 +8,19 @@ param aiAgentId string
 param entraSpaClientId string
 param entraTenantId string
 param webImageName string
+@description('Optional explicit Container App name. If empty, default generated name is used.')
+param webContainerAppName string = ''
 
 var abbrs = loadJsonContent('./abbreviations.json')
+var resolvedWebContainerAppName = empty(webContainerAppName)
+  ? '${abbrs.appContainerApps}web-${resourceToken}'
+  : webContainerAppName
 
 // Single Container App - serves both frontend and backend
 module webApp './core/host/container-app.bicep' = {
   name: 'web-container-app'
   params: {
-    name: '${abbrs.appContainerApps}web-${resourceToken}'
+    name: resolvedWebContainerAppName
     location: location
     tags: union(tags, { 'azd-service-name': 'web' })
     containerAppsEnvironmentId: containerAppsEnvironmentId

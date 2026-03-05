@@ -13,7 +13,7 @@ $tenantId = azd env get-value ENTRA_TENANT_ID 2>$null
 $acrName = azd env get-value AZURE_CONTAINER_REGISTRY_NAME 2>$null
 $resourceGroup = azd env get-value AZURE_RESOURCE_GROUP_NAME 2>$null
 $containerApp = azd env get-value AZURE_CONTAINER_APP_NAME 2>$null
-$functionAppName = azd env get-value FUNCTION_APP_NAME 2>$null
+$functionAppName = (azd env get-value FUNCTION_APP_NAME 2>&1) | Where-Object { $_ -notmatch 'ERROR' } | Select-Object -First 1
 
 if (-not $clientId -or -not $tenantId) {
     Write-Host "[ERROR] ENTRA_SPA_CLIENT_ID or ENTRA_TENANT_ID not set" -ForegroundColor Red
@@ -106,7 +106,7 @@ try {
         }
     }
 
-    if ($functionAppName -and $resourceGroup) {
+    if (-not [string]::IsNullOrWhiteSpace($functionAppName) -and $resourceGroup) {
         $functionProject = Join-Path $projectRoot "functions/BimCuIngest/BimCuIngest.csproj"
         if (Test-Path $functionProject) {
             Write-Host "Publishing Function App..." -ForegroundColor Cyan
@@ -124,6 +124,8 @@ try {
         } else {
             Write-Host "[SKIP] Function project not found at $functionProject" -ForegroundColor Yellow
         }
+    } else {
+        Write-Host "[SKIP] FUNCTION_APP_NAME not configured for this environment" -ForegroundColor Yellow
     }
     
     azd env set SERVICE_WEB_IMAGE_NAME $imageName 2>$null

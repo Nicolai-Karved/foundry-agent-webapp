@@ -1,0 +1,19 @@
+name: ai-foundry-agent-bim-compliance
+metadata:
+  template: ai-foundry-agent@0.0.1
+  location: swedencentral
+
+infra:
+  path: ../../infra
+  module: main-bim-compliance
+
+hooks:
+  predeploy:
+    windows:
+      shell: pwsh
+      run: ../../deployment/hooks/predeploy.ps1
+      continueOnError: false
+    posix:
+      shell: pwsh
+      run: ../../deployment/hooks/predeploy.ps1
+      continueOnError: false
