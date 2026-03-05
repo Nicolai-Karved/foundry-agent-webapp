@@ -1,0 +1,177 @@
+{
+  "specPackageId": "FS-0001-word-compliance-agent-tasks",
+  "featureId": "word-compliance-agent-tasks",
+  "title": "Word Compliance Agent Tasks",
+  "date": "2026-03-05",
+  "status": "draft-blocked",
+  "referencedAdrs": [
+    "docs/architecture/decisions/ADR-0001-word-addin-task-anchoring-and-state.md"
+  ],
+  "implementationGate": {
+    "adrAcceptanceRequired": true,
+    "rule": "Implementation MUST NOT start until referenced ADR is Accepted or a documented exception is approved."
+  },
+  "scope": {
+    "hosts": ["word-web", "word-desktop"],
+    "deployment": "internal-integrated-apps",
+    "primaryGoal": "Review generated tasks, use standards context, edit document directly in Word, and re-verify manually.",
+    "nonGoals": [
+      "Public marketplace publishing",
+      "Fully automated re-verification on each edit",
+      "Cross-document bulk operations"
+    ]
+  },
+  "roles": ["document_author", "reviewer_compliance_analyst"],
+  "statuses": ["open", "in_review", "done", "skipped", "blocked"],
+  "flows": [
+    "open_addin_and_load_tasks",
+    "select_task_and_highlight_anchor",
+    "edit_document_in_word",
+    "update_task_status",
+    "manual_reverify"
+  ],
+  "requirements": {
+    "must": [
+      {"id": "FR-MUST-001", "text": "Display all active tasks in task panel while open."},
+      {"id": "FR-MUST-002", "text": "Show title/summary, status, citation snippet, and source identifier for each task."},
+      {"id": "FR-MUST-003", "text": "Support statuses: open, in_review, done, skipped, blocked."},
+      {"id": "FR-MUST-004", "text": "Persist status both document-local and backend."},
+      {"id": "FR-MUST-005", "text": "Use content controls by tag as primary document anchors."},
+      {"id": "FR-MUST-006", "text": "Selecting task navigates and highlights mapped range."},
+      {"id": "FR-MUST-007", "text": "If anchor missing, attempt text-search fallback relink when confidence is sufficient."},
+      {"id": "FR-MUST-008", "text": "Provide manual Re-verify action."},
+      {"id": "FR-MUST-009", "text": "Refresh tasks after re-verification without restart."},
+      {"id": "FR-MUST-010", "text": "Display citation/reference context from standards or external docs."},
+      {"id": "FR-MUST-011", "text": "Create or update a Word comment anchored to mapped text for citation/reference context."},
+      {"id": "FR-MUST-012", "text": "Define explicit API contract for list tasks, update status, rerun verification, citation context."}
+    ],
+    "should": [
+      {"id": "FR-SHOULD-001", "text": "Support filter/sort by status/severity/standard."},
+      {"id": "FR-SHOULD-002", "text": "Preserve selected task after refresh when possible."},
+      {"id": "FR-SHOULD-003", "text": "Expose anchor quality metadata."}
+    ],
+    "may": [
+      {"id": "FR-MAY-001", "text": "Batch status updates."},
+      {"id": "FR-MAY-002", "text": "Configurable highlight colors by status."}
+    ]
+  },
+  "security": {
+    "governancePolicies": [
+      "Secure Development Policy",
+      "Code Review Procedure",
+      "Development Vulnerability Management Procedure",
+      "Access Control Policy",
+      "Cryptography Policy",
+      "Test and Development Data Handling Procedure",
+      "System Policy",
+      "Threat Modelling"
+    ],
+    "must": [
+      "Use Microsoft 365 user identity (SSO/OAuth); no client embedded API keys.",
+      "Do not upload full document by default; send minimum snippets.",
+      "Apply PII redaction before backend call where configured.",
+      "Retain prompt/response/task action audits for 30 days.",
+      "Use HTTPS for all assets and API traffic.",
+      "Manifest domain allowlist must include all required task pane and Office.js call domains.",
+      "Produce/update threat model artifact before release.",
+      "Enable dependency and vulnerability scanning in CI."
+    ],
+    "controlMatrix": [
+      {"controlId": "SEC-MUST-001", "policy": "Access Control Policy"},
+      {"controlId": "SEC-MUST-002", "policy": "Test and Development Data Handling Procedure"},
+      {"controlId": "SEC-MUST-003", "policy": "Test and Development Data Handling Procedure"},
+      {"controlId": "SEC-MUST-004", "policy": "System Policy"},
+      {"controlId": "SEC-MUST-005", "policy": "Cryptography Policy"},
+      {"controlId": "SEC-MUST-006", "policy": "Secure Development Policy"},
+      {"controlId": "SEC-MUST-007", "policy": "Threat Modelling"},
+      {"controlId": "SEC-MUST-008", "policy": "Development Vulnerability Management Procedure"},
+      {"controlId": "SEC-SHOULD-001", "policy": "Code Review Procedure"},
+      {"controlId": "SEC-SHOULD-002", "policy": "Access Control Policy"}
+    ]
+  },
+  "observability": {
+    "required": [
+      "Client errors",
+      "API latency and failure rates",
+      "User actions: select/highlight/status/reverify",
+      "Correlation IDs end-to-end"
+    ],
+    "thresholds": [
+      {"id": "NFR-OBS-001", "metric": "task_list_load_p95_latency", "target": "<=2.5s"},
+      {"id": "NFR-OBS-002", "metric": "reverify_request_to_refresh_p95_latency", "target": "<=8s"},
+      {"id": "NFR-OBS-003", "metric": "status_update_api_success_rate_24h", "target": ">=99.0%"},
+      {"id": "NFR-OBS-004", "metric": "audit_log_write_success_rate_24h", "target": ">=99.9%"},
+      {"id": "NFR-OBS-005", "metric": "core_action_event_ingestion_completeness", "target": ">=99%"}
+    ]
+  },
+  "dataModel": {
+    "Task": ["taskId", "documentId", "title", "description", "status", "citation", "referenceSource", "anchor"],
+    "Anchor": ["anchorType", "anchorValue", "confidence", "lastValidatedAt"],
+    "TaskActionAudit": ["actionId", "taskId", "actionType", "previousStatus", "newStatus", "userId", "timestamp", "correlationId"]
+  },
+  "contractsToProduce": [
+    "OpenAPI endpoints for task list/status update/reverify/citation-context",
+    "JSON schema for structured task output with anchor metadata",
+    "Error model and retry policy"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-001",
+      "given": "verification results exist for document",
+      "when": "user opens task pane",
+      "then": "all tasks are visible with statuses and citation summaries"
+    },
+    {
+      "id": "AC-002",
+      "given": "task is open",
+      "when": "user sets in_review",
+      "then": "status updates immediately and persists locally and in backend"
+    },
+    {
+      "id": "AC-003",
+      "given": "task has content-control tag anchor",
+      "when": "user selects task",
+      "then": "document navigates and highlights mapped text"
+    },
+    {
+      "id": "AC-004",
+      "given": "original anchor no longer exists",
+      "when": "user selects task",
+      "then": "fallback search relinks automatically when confidence threshold is met"
+    },
+    {
+      "id": "AC-005",
+      "given": "task is linked to in-document text",
+      "when": "task details are shown",
+      "then": "citation context is available as in-document note"
+    },
+    {
+      "id": "AC-006",
+      "given": "user has edited document",
+      "when": "user clicks Re-verify",
+      "then": "updated tasks are fetched and shown"
+    }
+  ],
+  "rollout": {
+    "strategy": "internal-only",
+    "channel": "m365-integrated-apps",
+    "compatibility": [
+      "Word web",
+      "Word desktop"
+    ]
+  },
+  "openQuestions": [
+    "Anchor fallback confidence threshold",
+    "Final API schema for task status operations"
+  ],
+  "references": [
+    "https://learn.microsoft.com/en-us/office/dev/add-ins/",
+    "https://learn.microsoft.com/en-us/office/dev/add-ins/quickstarts/word-quickstart-yo",
+    "https://learn.microsoft.com/en-us/office/dev/add-ins/tutorials/word-tutorial",
+    "https://learn.microsoft.com/en-us/office/dev/add-ins/develop/add-in-manifests",
+    "https://learn.microsoft.com/en-us/javascript/api/overview",
+    "https://learn.microsoft.com/en-us/javascript/api/word?view=word-js-preview",
+    "https://learn.microsoft.com/en-us/office/dev/add-ins/publish/publish",
+    "https://github.com/OfficeDev/generator-office"
+  ]
+}
