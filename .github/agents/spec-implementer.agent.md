@@ -4,7 +4,7 @@ description: "Builds an executable implementation plan from feature specs, ADRs,
 argument-hint: "Generate an implementation plan from an existing feature spec package."
 user-invocable: true
 target: vscode
-model: "GPT-5.3-Codex"
+model: "GPT-5.4"
 # tools:
 #   - <tool-id>
 #   - <tool-id>/*
@@ -14,6 +14,9 @@ agents:
   - SecurityAssessment
   - RepoGovernance
 handoffs:
+  - label: Start implementation from approved plan
+    agent: SpecImplementer
+    prompt: Continue from the approved Plan.md and implement incrementally with minimal, reversible changes. Do not re-enter planning unless scope changes materially.
   - label: Verify current step and write corrections
     agent: SpecVerifier
     prompt: Verify the implemented step against instructions, skills, spec, ADRs, and security governance requirements, then update Corrections with MUST/SHOULD findings.

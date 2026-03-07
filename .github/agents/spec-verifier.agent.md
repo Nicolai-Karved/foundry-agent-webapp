@@ -4,7 +4,7 @@ description: "Verifies compliance against instructions, skills, specs, ADRs, and
 argument-hint: "Verify implementation compliance and produce corrections."
 user-invocable: true
 target: vscode
-model: "GPT-5.3-Codex"
+model: "GPT-5.4"
 # tools:
 #   - <tool-id>
 #   - <tool-id>/*

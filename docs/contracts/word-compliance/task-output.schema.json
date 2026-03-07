@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foundry-agent-webapp.local/schemas/fs-0001-task-output.schema.json",
+  "title": "FS-0001 Task Output",
+  "type": "object",
+  "required": ["documentId", "tasks"],
+  "properties": {
+    "documentId": {
+      "type": "string"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    }
+  },
+  "$defs": {
+    "taskStatus": {
+      "type": "string",
+      "enum": ["open", "in_review", "done", "skipped", "blocked"]
+    },
+    "anchor": {
+      "type": "object",
+      "required": ["anchorType", "anchorValue", "confidence", "lastValidatedAt"],
+      "properties": {
+        "anchorType": {
+          "type": "string",
+          "enum": ["contentControlTag", "textSearchFallback"]
+        },
+        "anchorValue": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lastValidatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "taskId",
+        "documentId",
+        "title",
+        "description",
+        "status",
+        "citation",
+        "referenceSource",
+        "anchor"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/taskStatus"
+        },
+        "citation": {
+          "type": "string"
+        },
+        "referenceSource": {
+          "type": "string"
+        },
+        "anchor": {
+          "$ref": "#/$defs/anchor"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

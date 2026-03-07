@@ -1,0 +1,77 @@
+name: FS-0001 Security Scan
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/fs0001-security-scan.yml'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/fs0001-security-scan.yml'
+  schedule:
+    - cron: '0 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet-vulnerability-scan:
+    name: .NET vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore backend
+        run: dotnet restore backend/WebApp.sln -p:RestoreIgnoreFailedSources=true
+
+      - name: Restore local dotnet tools
+        run: dotnet tool restore
+
+      - name: Build backend
+        run: dotnet build backend/WebApp.sln --no-restore
+
+      - name: Run backend tests
+        run: dotnet test backend/WebApp.Api.Tests/WebApp.Api.Tests.csproj --no-build --verbosity normal
+
+      - name: List vulnerable packages (backend)
+        run: dotnet list backend/WebApp.Api/WebApp.Api.csproj package --vulnerable --include-transitive
+
+      - name: Verify evaluation-task migration script generation
+        run: dotnet ef migrations script --project backend/WebApp.Api/WebApp.Api.csproj --startup-project backend/WebApp.Api/WebApp.Api.csproj --context EvaluationTaskDbContext --idempotent --output backend/WebApp.Api/obj/fs0002-idempotent.sql
+
+  npm-audit-frontend:
+    name: Frontend npm audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run npm audit (high+critical)
+        run: npm audit --audit-level=high

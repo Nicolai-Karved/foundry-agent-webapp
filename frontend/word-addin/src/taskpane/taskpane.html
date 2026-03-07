@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Word Compliance Tasks</title>
+  <link rel="stylesheet" href="./taskpane.css" />
+</head>
+<body>
+  <main>
+    <h1>Word Compliance Tasks</h1>
+    <div id="status">Ready</div>
+    <div class="toolbar">
+      <label for="document-id">Document ID</label>
+      <input id="document-id" type="text" placeholder="doc-001" />
+      <button id="load-tasks">Load Tasks</button>
+      <button id="rerun-verification">Re-verify</button>
+    </div>
+    <div id="selected-task" class="selected-task">No task selected.</div>
+    <pre id="citation-context" class="citation-context"></pre>
+    <ul id="task-list"></ul>
+  </main>
+  <script type="module" src="./taskpane.ts"></script>
+</body>
+</html>

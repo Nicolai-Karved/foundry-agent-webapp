@@ -82,9 +82,14 @@ Environment variables are loaded before ASP.NET Core configuration builder runs.
 
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
-| `/api/agents` | GET | Required | List available agents (metadata) |
+| `/api/agent` | GET | Required | Get active agent metadata |
+| `/api/agent/info` | GET | Required | Get active agent info (debug) |
+| `/api/tasks` | GET | Required | List compliance tasks for a document |
+| `/api/tasks/{taskId}/status` | PATCH | Required | Update compliance task status |
+| `/api/tasks/{taskId}/citation-context` | GET | Required | Get task citation/reference context |
+| `/api/verification/rerun` | POST | Required | Trigger manual verification rerun |
+| `/api/telemetry/events` | POST | Required | Ingest compliance UI telemetry events |
 | `/api/chat/stream` | POST | Required | Send message, receive streaming response |
-| `/api/threads` | POST | Required | Create new thread (future) |
 
 All endpoints require `Chat.ReadWrite` scope in JWT token.
 

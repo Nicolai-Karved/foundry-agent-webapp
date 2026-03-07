@@ -4,7 +4,7 @@ description: "Transforms an initial user outcome into a complete, testable speci
 argument-hint: "Create a feature specification package from an outcome prompt."
 user-invocable: true
 target: vscode
-model: "GPT-5.3-Codex"
+model: "GPT-5.4"
 # tools:
 #   - <tool-id>
 #   - <tool-id>/*

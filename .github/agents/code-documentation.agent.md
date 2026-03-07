@@ -4,7 +4,7 @@ description: "Document an existing multi-solution codebase using a strict, inter
 argument-hint: "Document a repo without code examples."
 user-invocable: true
 target: vscode
-model: "GPT-5.3-Codex"
+model: "GPT-5.4"
 # tools:
 #   - <tool-id>
 #   - <tool-id>/*

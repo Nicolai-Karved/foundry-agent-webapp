@@ -1,0 +1,376 @@
+openapi: 3.0.3
+info:
+  title: Word Compliance Task API
+  version: 0.1.0
+  description: API contract for FS-0001 task lifecycle operations.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /tasks:
+    get:
+      summary: List compliance tasks for a document
+      operationId: listTasks
+      parameters:
+        - in: query
+          name: documentId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task list response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '400':
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /tasks/{taskId}/status:
+    patch:
+      summary: Update task status
+      operationId: updateTaskStatus
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskStatusRequest'
+      responses:
+        '200':
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Task not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Version conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /verification/rerun:
+    post:
+      summary: Trigger manual re-verification
+      operationId: rerunVerification
+      parameters:
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerunVerificationRequest'
+      responses:
+        '202':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RerunVerificationResponse'
+        '400':
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /telemetry/events:
+    post:
+      summary: Ingest add-in telemetry event
+      operationId: postTelemetryEvent
+      parameters:
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryEventRequest'
+      responses:
+        '202':
+          description: Accepted telemetry event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryAcceptedResponse'
+        '400':
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /tasks/{taskId}/citation-context:
+    get:
+      summary: Retrieve citation/reference context for a task
+      operationId: getTaskCitationContext
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: documentId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Citation context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CitationContextResponse'
+        '404':
+          description: Task not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    TaskStatus:
+      type: string
+      enum: [open, in_review, done, skipped, blocked]
+    Anchor:
+      type: object
+      required: [anchorType, anchorValue, confidence, lastValidatedAt]
+      properties:
+        anchorType:
+          type: string
+          enum: [contentControlTag, textSearchFallback]
+        anchorValue:
+          type: string
+        confidence:
+          type: number
+          format: float
+        lastValidatedAt:
+          type: string
+          format: date-time
+    Task:
+      type: object
+      required:
+        [taskId, documentId, title, description, status, citation, referenceSource, anchor, version]
+      properties:
+        taskId:
+          type: string
+        documentId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        citation:
+          type: string
+        referenceSource:
+          type: string
+        anchor:
+          $ref: '#/components/schemas/Anchor'
+        version:
+          type: integer
+          format: int64
+    TaskActionAudit:
+      type: object
+      required:
+        [actionId, taskId, actionType, previousStatus, newStatus, userId, timestamp, correlationId]
+      properties:
+        actionId:
+          type: string
+        taskId:
+          type: string
+        actionType:
+          type: string
+        previousStatus:
+          $ref: '#/components/schemas/TaskStatus'
+        newStatus:
+          $ref: '#/components/schemas/TaskStatus'
+        userId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+    TaskListResponse:
+      type: object
+      required: [documentId, correlationId, tasks]
+      properties:
+        documentId:
+          type: string
+        correlationId:
+          type: string
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+    UpdateTaskStatusRequest:
+      type: object
+      required: [documentId, status, expectedVersion]
+      properties:
+        documentId:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        expectedVersion:
+          type: integer
+          format: int64
+    RerunVerificationRequest:
+      type: object
+      required: [documentId]
+      properties:
+        documentId:
+          type: string
+        snippet:
+          type: string
+          description: Optional minimized snippet for backend processing.
+        includeSuggestions:
+          type: boolean
+          default: true
+    RerunVerificationResponse:
+      type: object
+      required: [documentId, requestId, status, correlationId]
+      properties:
+        documentId:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [accepted]
+        correlationId:
+          type: string
+    CitationContextResponse:
+      type: object
+      required: [taskId, documentId, citation, referenceSource, context]
+      properties:
+        taskId:
+          type: string
+        documentId:
+          type: string
+        citation:
+          type: string
+        referenceSource:
+          type: string
+        context:
+          type: string
+    TelemetryEventRequest:
+      type: object
+      required: [eventName]
+      properties:
+        eventName:
+          type: string
+        occurredAtUtc:
+          type: string
+          format: date-time
+        properties:
+          type: object
+          additionalProperties:
+            type: string
+    TelemetryAcceptedResponse:
+      type: object
+      required: [status, correlationId, receivedAtUtc]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        correlationId:
+          type: string
+        receivedAtUtc:
+          type: string
+          format: date-time
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        traceId:
+          type: string

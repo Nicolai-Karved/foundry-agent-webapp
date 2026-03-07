@@ -53,9 +53,13 @@ if (-not $SkipBrowser) {
     elseif (Get-Command xdg-open -ErrorAction SilentlyContinue) { xdg-open "http://localhost:5173" }
 }
 
+$localPostgresDb = if ([string]::IsNullOrWhiteSpace($env:FS0002_LOCAL_POSTGRES_DB)) { "foundry_agent_fs0002" } else { $env:FS0002_LOCAL_POSTGRES_DB }
+$localPostgresUser = if ([string]::IsNullOrWhiteSpace($env:FS0002_LOCAL_POSTGRES_USER)) { "postgres" } else { $env:FS0002_LOCAL_POSTGRES_USER }
+
 Write-Host "`n[OK] Docker dev services started" -ForegroundColor Green
 Write-Host "  Frontend: http://localhost:5173" -ForegroundColor Cyan
 Write-Host "  Backend:  http://localhost:8089" -ForegroundColor Cyan
+Write-Host "  Postgres: localhost:5432 (db=$localPostgresDb user=$localPostgresUser)" -ForegroundColor Cyan
 Write-Host "`nUseful commands:" -ForegroundColor Gray
 Write-Host "  docker compose -f docker-compose.dev.yml logs -f" -ForegroundColor Gray
 Write-Host "  docker compose -f docker-compose.dev.yml down" -ForegroundColor Gray

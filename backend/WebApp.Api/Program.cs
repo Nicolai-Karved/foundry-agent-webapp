@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
+using WebApp.Api.Configuration;
+using WebApp.Api.Data;
 using WebApp.Api.Models;
 using WebApp.Api.Services;
 using System.Security.Claims;
@@ -48,6 +51,30 @@ builder.AddServiceDefaults();
 
 // Add ProblemDetails service for standardized RFC 7807 error responses
 builder.Services.AddProblemDetails();
+
+builder.Services.Configure<EvaluationTaskSyncOptions>(
+    builder.Configuration.GetSection(EvaluationTaskSyncOptions.SectionName));
+
+EvaluationTaskSyncOptions evaluationTaskSyncOptions = builder.Configuration
+    .GetSection(EvaluationTaskSyncOptions.SectionName)
+    .Get<EvaluationTaskSyncOptions>()
+    ?? new EvaluationTaskSyncOptions();
+
+string preferredTaskPersistenceConnectionStringName = evaluationTaskSyncOptions.Persistence.PreferredConnectionStringName;
+string? evaluationTaskPersistenceConnectionString = builder.Configuration.GetConnectionString(preferredTaskPersistenceConnectionStringName)
+    ?? builder.Configuration["FS0002_TASK_PERSISTENCE_CONNECTION_STRING"];
+bool hasEvaluationTaskPersistence = !string.IsNullOrWhiteSpace(evaluationTaskPersistenceConnectionString);
+
+if (hasEvaluationTaskPersistence)
+{
+    builder.Services.AddDbContextFactory<EvaluationTaskDbContext>(options =>
+        options.UseNpgsql(
+            evaluationTaskPersistenceConnectionString,
+            npgsqlOptions => npgsqlOptions.MigrationsHistoryTable(
+                "__EFMigrationsHistory",
+                evaluationTaskSyncOptions.Persistence.PreferredSchema)));
+    builder.Services.AddSingleton<IEvaluationTaskPersistenceService, EvaluationTaskPersistenceService>();
+}
 
 // Configure CORS for local development and production
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
@@ -138,8 +165,19 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddScoped<AgentFrameworkService>();
 builder.Services.AddSingleton<StandardsRetrievalService>();
 builder.Services.AddSingleton<StandardsPromptBuilder>();
+builder.Services.AddSingleton<TaskLifecycleService>();
+builder.Services.AddSingleton<PiiRedactionService>();
 
 var app = builder.Build();
+
+if (evaluationTaskSyncOptions.Enabled
+    && hasEvaluationTaskPersistence
+    && evaluationTaskSyncOptions.Persistence.AutoMigrateOnStartup)
+{
+    IDbContextFactory<EvaluationTaskDbContext> dbContextFactory = app.Services.GetRequiredService<IDbContextFactory<EvaluationTaskDbContext>>();
+    await using EvaluationTaskDbContext dbContext = await dbContextFactory.CreateDbContextAsync();
+    await dbContext.Database.MigrateAsync();
+}
 
 // Add exception handling middleware for production
 if (!app.Environment.IsDevelopment())
@@ -390,6 +428,136 @@ app.MapPost("/api/chat/stream", async (
 .RequireAuthorization(ScopePolicyName)
 .WithName("StreamChatMessage");
 
+if (evaluationTaskSyncOptions.Enabled && hasEvaluationTaskPersistence)
+{
+    app.MapPost("/api/task-sync/ingest", async (
+        EvaluationTaskSyncRequest request,
+        IEvaluationTaskPersistenceService persistenceService,
+        HttpContext httpContext,
+        IHostEnvironment environment,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            var correlationId = GetCorrelationId(httpContext.Request);
+            SetCorrelationIdHeader(httpContext.Response, correlationId);
+            var response = await persistenceService.IngestAsync(request, correlationId, cancellationToken);
+            return Results.Accepted($"/api/task-snapshots/{Uri.EscapeDataString(request.DocumentId)}", response);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.UnprocessableEntity(new
+            {
+                message = ex.Message
+            });
+        }
+        catch (Exception ex)
+        {
+            var errorResponse = ErrorResponseFactory.CreateFromException(
+                ex,
+                500,
+                environment.IsDevelopment());
+
+            return Results.Problem(
+                title: errorResponse.Title,
+                detail: errorResponse.Detail,
+                statusCode: errorResponse.Status,
+                extensions: errorResponse.Extensions);
+        }
+    })
+    .RequireAuthorization(ScopePolicyName)
+    .WithName("IngestEvaluationTasks");
+
+    app.MapGet("/api/task-snapshots/{documentId}", async (
+        string documentId,
+        bool includeSuperseded,
+        IEvaluationTaskPersistenceService persistenceService,
+        HttpContext httpContext,
+        CancellationToken cancellationToken) =>
+    {
+        var correlationId = GetCorrelationId(httpContext.Request);
+        SetCorrelationIdHeader(httpContext.Response, correlationId);
+        var userId = GetUserId(httpContext.User);
+        var snapshot = await persistenceService.GetTaskSnapshotAsync(documentId, userId, includeSuperseded, cancellationToken);
+        return snapshot is null ? Results.NotFound(new { message = "task snapshot not found" }) : Results.Ok(snapshot);
+    })
+    .RequireAuthorization(ScopePolicyName)
+    .WithName("GetTaskSnapshot");
+
+    app.MapPatch("/api/tasks/{taskId}/overlay", async (
+        string taskId,
+        UpdateComplianceTaskStatusRequest request,
+        TaskLifecycleService taskService,
+        IEvaluationTaskPersistenceService persistenceService,
+        HttpContext httpContext,
+        IHostEnvironment environment,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            if (!ComplianceTaskStatuses.IsValid(request.Status))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "status must be one of: open, in_review, done, skipped, blocked"
+                });
+            }
+
+            var correlationId = GetCorrelationId(httpContext.Request);
+            SetCorrelationIdHeader(httpContext.Response, correlationId);
+            var userId = GetUserId(httpContext.User);
+
+            var result = await taskService.UpdateTaskStatusAsync(
+                taskId,
+                request,
+                userId,
+                correlationId,
+                cancellationToken);
+
+            if (result.NotFound)
+            {
+                return Results.NotFound(new { message = "task not found" });
+            }
+
+            if (result.VersionConflict)
+            {
+                return Results.Problem(
+                    title: "Version conflict",
+                    detail: "Task version mismatch. Refresh tasks and retry.",
+                    statusCode: 409,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["task"] = result.UpdatedTask,
+                        ["correlationId"] = correlationId
+                    });
+            }
+
+            TaskOverlayUpdateResponse? overlay = await persistenceService.GetOverlayAsync(
+                taskId,
+                request.DocumentId,
+                userId,
+                cancellationToken);
+
+            return overlay is null ? Results.NotFound(new { message = "task overlay not found" }) : Results.Ok(overlay);
+        }
+        catch (Exception ex)
+        {
+            var errorResponse = ErrorResponseFactory.CreateFromException(
+                ex,
+                500,
+                environment.IsDevelopment());
+
+            return Results.Problem(
+                title: errorResponse.Title,
+                detail: errorResponse.Detail,
+                statusCode: errorResponse.Status,
+                extensions: errorResponse.Extensions);
+        }
+    })
+    .RequireAuthorization(ScopePolicyName)
+    .WithName("UpdateTaskOverlay");
+}
+
 static async Task WriteConversationIdEvent(HttpResponse response, string conversationId, CancellationToken ct)
 {
     await response.WriteAsync(
@@ -486,6 +654,276 @@ static async Task WriteErrorEvent(HttpResponse response, string code, string mes
     await response.Body.FlushAsync(ct);
 }
 
+static string GetCorrelationId(HttpRequest request)
+{
+    if (request.Headers.TryGetValue("X-Correlation-Id", out var values))
+    {
+        var value = values.ToString();
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+    }
+
+    return Guid.NewGuid().ToString("N");
+}
+
+static string GetUserId(ClaimsPrincipal user)
+{
+    return user.FindFirst("oid")?.Value
+        ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? "unknown";
+}
+
+static void SetCorrelationIdHeader(HttpResponse response, string correlationId)
+{
+    response.Headers["X-Correlation-Id"] = correlationId;
+}
+
+app.MapGet("/api/tasks", async (
+    string documentId,
+    TaskLifecycleService taskService,
+    HttpContext httpContext,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            return Results.BadRequest(new
+            {
+                message = "documentId is required"
+            });
+        }
+
+        var correlationId = GetCorrelationId(httpContext.Request);
+        SetCorrelationIdHeader(httpContext.Response, correlationId);
+        var userId = GetUserId(httpContext.User);
+        var response = await taskService.GetTasksAsync(documentId, userId, correlationId, cancellationToken);
+        return Results.Ok(response);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(
+            ex,
+            500,
+            environment.IsDevelopment());
+
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions);
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("ListComplianceTasks");
+
+app.MapPatch("/api/tasks/{taskId}/status", async (
+    string taskId,
+    UpdateComplianceTaskStatusRequest request,
+    TaskLifecycleService taskService,
+    HttpContext httpContext,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (!ComplianceTaskStatuses.IsValid(request.Status))
+        {
+            return Results.BadRequest(new
+            {
+                message = "status must be one of: open, in_review, done, skipped, blocked"
+            });
+        }
+
+        var correlationId = GetCorrelationId(httpContext.Request);
+        SetCorrelationIdHeader(httpContext.Response, correlationId);
+        var userId = GetUserId(httpContext.User);
+
+        var result = await taskService.UpdateTaskStatusAsync(
+            taskId,
+            request,
+            userId,
+            correlationId,
+            cancellationToken);
+
+        if (result.NotFound)
+        {
+            return Results.NotFound(new
+            {
+                message = "task not found"
+            });
+        }
+
+        if (result.VersionConflict)
+        {
+            return Results.Problem(
+                title: "Version conflict",
+                detail: "Task version mismatch. Refresh tasks and retry.",
+                statusCode: 409,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["task"] = result.UpdatedTask,
+                    ["correlationId"] = correlationId
+                });
+        }
+
+        return Results.Ok(result.UpdatedTask);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(
+            ex,
+            500,
+            environment.IsDevelopment());
+
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions);
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("UpdateComplianceTaskStatus");
+
+app.MapPost("/api/verification/rerun", async (
+    RerunVerificationRequest request,
+    TaskLifecycleService taskService,
+    PiiRedactionService redactionService,
+    HttpContext httpContext,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(request.DocumentId))
+        {
+            return Results.BadRequest(new
+            {
+                message = "documentId is required"
+            });
+        }
+
+        var correlationId = GetCorrelationId(httpContext.Request);
+        SetCorrelationIdHeader(httpContext.Response, correlationId);
+        var userId = GetUserId(httpContext.User);
+
+        var redactedRequest = request with
+        {
+            Snippet = redactionService.Redact(request.Snippet)
+        };
+
+        var response = await taskService.RerunVerificationAsync(redactedRequest, userId, correlationId, cancellationToken);
+        return Results.Accepted($"/api/tasks?documentId={Uri.EscapeDataString(request.DocumentId)}", response);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(
+            ex,
+            500,
+            environment.IsDevelopment());
+
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions);
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("RerunComplianceVerification");
+
+app.MapPost("/api/telemetry/events", (
+    ComplianceTelemetryEventRequest request,
+    PiiRedactionService redactionService,
+    HttpContext httpContext,
+    ILoggerFactory loggerFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(request.EventName))
+    {
+        return Results.BadRequest(new
+        {
+            message = "eventName is required"
+        });
+    }
+
+    var correlationId = GetCorrelationId(httpContext.Request);
+    SetCorrelationIdHeader(httpContext.Response, correlationId);
+
+    var sanitizedProperties = request.Properties.ToDictionary(
+        entry => entry.Key,
+        entry => redactionService.Redact(entry.Value),
+        StringComparer.OrdinalIgnoreCase);
+
+    var logger = loggerFactory.CreateLogger("ComplianceTelemetry");
+    logger.LogInformation(
+        "Compliance telemetry event received. EventName={EventName}, CorrelationId={CorrelationId}, PropertyCount={PropertyCount}",
+        request.EventName,
+        correlationId,
+        sanitizedProperties.Count);
+
+    return Results.Accepted(
+        value: new ComplianceTelemetryAcceptedResponse
+        {
+            Status = "accepted",
+            CorrelationId = correlationId,
+            ReceivedAtUtc = DateTimeOffset.UtcNow
+        });
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("PostComplianceTelemetryEvent");
+
+app.MapGet("/api/tasks/{taskId}/citation-context", async (
+    string taskId,
+    string documentId,
+    TaskLifecycleService taskService,
+    HttpContext httpContext,
+    IHostEnvironment environment,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            return Results.BadRequest(new
+            {
+                message = "documentId is required"
+            });
+        }
+
+    var correlationId = GetCorrelationId(httpContext.Request);
+    SetCorrelationIdHeader(httpContext.Response, correlationId);
+    var result = await taskService.GetCitationContextAsync(taskId, documentId, cancellationToken);
+        if (result.NotFound)
+        {
+            return Results.NotFound(new
+            {
+                message = "task not found"
+            });
+        }
+
+        return Results.Ok(result.Response);
+    }
+    catch (Exception ex)
+    {
+        var errorResponse = ErrorResponseFactory.CreateFromException(
+            ex,
+            500,
+            environment.IsDevelopment());
+
+        return Results.Problem(
+            title: errorResponse.Title,
+            detail: errorResponse.Detail,
+            statusCode: errorResponse.Status,
+            extensions: errorResponse.Extensions);
+    }
+})
+.RequireAuthorization(ScopePolicyName)
+.WithName("GetComplianceTaskCitationContext");
+
 // Get agent metadata (name, description, model, metadata)
 // Used by frontend to display agent information in the UI
 app.MapGet("/api/agent", async (
@@ -553,3 +991,5 @@ app.MapGet("/api/agent/info", async (
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+public partial class Program;

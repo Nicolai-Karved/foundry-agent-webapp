@@ -1,0 +1,56 @@
+body {
+  font-family: Segoe UI, Arial, sans-serif;
+  margin: 0;
+  padding: 12px;
+}
+
+h1 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+#status {
+  margin-bottom: 12px;
+  color: #0f6cbd;
+}
+
+#task-list {
+  margin-top: 12px;
+  padding-left: 18px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+#document-id {
+  min-width: 160px;
+}
+
+.selected-task {
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+.citation-context {
+  white-space: pre-wrap;
+  background: #f7f7f7;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  padding: 8px;
+  min-height: 36px;
+}
+
+.task-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.task-actions button {
+  font-size: 11px;
+  padding: 2px 6px;
+}

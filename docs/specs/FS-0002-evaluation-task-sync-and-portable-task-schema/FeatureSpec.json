@@ -1,0 +1,513 @@
+{
+  "specPackageId": "FS-0002-evaluation-task-sync-and-portable-task-schema",
+  "featureId": "evaluation-task-sync-and-portable-task-schema",
+  "title": "Evaluation Task Sync and Portable Task Schema",
+  "date": "2026-03-06",
+  "status": "draft-blocked",
+  "relatedSpecs": [
+    "docs/specs/FS-0001-word-compliance-agent-tasks/FeatureSpec.md"
+  ],
+  "referencedAdrs": [
+    "docs/architecture/decisions/ADR-0001-word-addin-task-anchoring-and-state.md",
+    "docs/architecture/decisions/ADR-0002-evaluation-task-sync-persistence-and-portable-schema.md"
+  ],
+  "implementationGate": {
+    "adrAcceptanceRequired": true,
+    "rule": "Implementation MUST NOT start until ADR-0002 is Accepted or a documented exception is approved."
+  },
+  "contractReviewGate": {
+    "requiredBeforeApiImplementation": true,
+    "rule": "API-affecting implementation MUST NOT start until draft sync-ingest OpenAPI and portable-task JSON Schema artifacts have been reviewed for compatibility and security."
+  },
+  "scope": {
+    "surfaces": [
+      "backend-evaluation-orchestrator",
+      "task-persistence-layer",
+      "existing-task-apis",
+      "current-pdf-viewer",
+      "future-blocksuite-editor"
+    ],
+    "preferredPersistenceTarget": "pg-naviate-agent-gateway",
+    "primaryGoal": "Persist evaluation-generated compliance tasks in a canonical, portable schema that remains compatible with FS-0001 clients and future editor surfaces.",
+    "nonGoals": [
+      "Replace the current PDF viewer with BlockSuite",
+      "Introduce collaborative editing semantics",
+      "Require prompt redesign when current output can be mapped",
+      "Store full raw document bodies by default",
+      "Break existing FS-0001 contracts"
+    ]
+  },
+  "roles": [
+    "backend_evaluation_orchestrator_service",
+    "document_author",
+    "reviewer_compliance_analyst",
+    "alternate_renderer_integrator"
+  ],
+  "flows": [
+    "evaluation_completes_and_emits_task_output",
+    "sync_validates_and_persists_canonical_tasks",
+    "clients_read_current_task_snapshot",
+    "user_updates_task_state_overlay",
+    "rerun_reconciles_generated_tasks_with_persisted_state"
+  ],
+  "requirements": {
+    "must": [
+      {
+        "id": "FR-MUST-001",
+        "text": "Introduce explicit sync contract from existing backend evaluation/orchestrator output into durable task persistence."
+      },
+      {
+        "id": "FR-MUST-002",
+        "text": "Version and validate sync contract before persistence."
+      },
+      {
+        "id": "FR-MUST-003",
+        "text": "Use PostgreSQL persistence, extending pg-naviate-agent-gateway when governance and compatibility checks pass."
+      },
+      {
+        "id": "FR-MUST-004",
+        "text": "If pg-naviate-agent-gateway is unsuitable, preserve the same logical contract and record the alternative via ADR update before implementation proceeds."
+      },
+      {
+        "id": "FR-MUST-005",
+        "text": "Make sync idempotent for repeated submissions of the same evaluation run for the same document."
+      },
+      {
+        "id": "FR-MUST-006",
+        "text": "Persist stable task identity, document identity, evaluation-run identity, schema version, status, severity, citation/reference data, anchor data, provenance, and timestamps."
+      },
+      {
+        "id": "FR-MUST-007",
+        "text": "Retain user-managed task state separately enough to preserve compatible reviewer actions across reruns."
+      },
+      {
+        "id": "FR-MUST-008",
+        "text": "Mark superseded or obsolete generated tasks explicitly instead of silently hard-deleting active history."
+      },
+      {
+        "id": "FR-MUST-009",
+        "text": "Keep existing FS-0001 task retrieval, status update, citation-context, and rerun APIs supported behind compatible contracts."
+      },
+      {
+        "id": "FR-MUST-010",
+        "text": "Define an editor-neutral canonical task JSON schema with no required Word-, PDF-, or BlockSuite-specific core fields."
+      },
+      {
+        "id": "FR-MUST-011",
+        "text": "Support current PDF-viewer and future BlockSuite consumption through optional surface-specific extensions layered on canonical task data."
+      },
+      {
+        "id": "FR-MUST-012",
+        "text": "Include portable anchor/reference structures able to represent source excerpts, document locations, and optional editor-specific bindings."
+      },
+      {
+        "id": "FR-MUST-013",
+        "text": "Define contract artifacts for sync ingest, task snapshot read, task status overlay update, and rerun reconciliation behavior."
+      },
+      {
+        "id": "FR-MUST-014",
+        "text": "Reject unsupported schema versions or malformed payloads with actionable validation errors and no partial silent persistence."
+      },
+      {
+        "id": "FR-MUST-015",
+        "text": "Trace every persisted task back to its originating evaluation run and source document."
+      },
+      {
+        "id": "FR-MUST-016",
+        "text": "Audit sync attempts, deduplicated submissions, reconciliation outcomes, and task-status changes."
+      },
+      {
+        "id": "FR-MUST-017",
+        "text": "Support backward-compatible rollout from the current in-memory FS-0001 implementation to durable persistence."
+      },
+      {
+        "id": "FR-MUST-018",
+        "text": "If pg-naviate-agent-gateway is reused, FS-0002 persistence must not break existing Revit or Web Agent MCP server-registration workloads already using that database."
+      },
+      {
+        "id": "FR-MUST-019",
+        "text": "Shared-database reuse must isolate FS-0002 objects through a dedicated schema, dedicated roles, and migration boundaries that do not modify or drop existing MCP registration objects — including the currently evidenced UserMcpServers, UserSecrets, and DataProtectionKeys tables used by NaviateGateway — unless a separately approved migration plan covers them."
+      },
+      {
+        "id": "FR-MUST-020",
+        "text": "Before implementation begins against pg-naviate-agent-gateway, the team must inventory existing MCP registration tables, schemas, roles, and critical queries used by Revit/Web Agent flows and verify that FS-0002 changes are non-breaking against that catalog. The current minimum protected catalog includes UserMcpServers, UserSecrets, DataProtectionKeys, and the ShareWithRevit sharing behavior evidenced in the existing gateway code."
+      }
+    ],
+    "should": [
+      {
+        "id": "FR-SHOULD-001",
+        "text": "Expose a stable logical task key for cross-run matching even when task IDs are regenerated."
+      },
+      {
+        "id": "FR-SHOULD-002",
+        "text": "Provide a task projection optimized for list UIs while preserving access to the full canonical record."
+      },
+      {
+        "id": "FR-SHOULD-003",
+        "text": "Support explicit task lifecycle markers such as superseded, reopened, or carried_forward for diagnostics."
+      },
+      {
+        "id": "FR-SHOULD-004",
+        "text": "Support batch sync and retrieval for multi-document evaluation scenarios without changing per-document canonical schema."
+      }
+    ],
+    "may": [
+      {
+        "id": "FR-MAY-001",
+        "text": "Publish task-sync events for downstream analytics or notifications."
+      },
+      {
+        "id": "FR-MAY-002",
+        "text": "Support export adapters that transform canonical task data into editor-specific packages."
+      }
+    ]
+  },
+  "security": {
+    "authModel": {
+      "syncProducerIdentity": "backend managed identity or approved service principal/workload identity",
+      "userFacingIdentity": "Microsoft 365 delegated user identity via SSO/OAuth",
+      "compatibilityAuthorizationFloor": "preserve the current FS-0001 authorization baseline until a narrower approved scope model replaces it",
+      "rendererAccessRule": "clients must access task data through approved backend APIs and must not receive direct database credentials"
+    },
+    "governancePolicies": [
+      "Secure Development Policy",
+      "Code Review Procedure",
+      "Development Vulnerability Management Procedure",
+      "Access Control Policy",
+      "Cryptography Policy",
+      "Test and Development Data Handling Procedure",
+      "System Policy",
+      "Threat Modelling"
+    ],
+    "must": [
+      "Use authenticated backend trust boundaries for sync ingestion.",
+      "Enforce tenant, user, and document scoping for task reads and writes.",
+      "Persist only minimum task evidence and not full raw document bodies by default.",
+      "Apply PII redaction before persistence where configured.",
+      "Use HTTPS/TLS for sync, read, and update traffic.",
+      "Retain task, audit, and sync metadata for at least 30 days.",
+      "Update threat model for durable persistence, replay/idempotency, rerun reconciliation, and multi-client consumption.",
+      "Enable dependency, migration, and vulnerability checks in CI.",
+      "Enforce payload size limits and schema validation before database writes.",
+      "Use least-privilege database access and approved secret management patterns."
+    ],
+    "should": [
+      "Connect evaluation run, sync attempt, persistence write, and user-visible task actions with correlation IDs.",
+      "Use immutable or append-only audit semantics for sync receipts and task-state transitions where practical.",
+      "Rely on approved platform encryption and backup settings for the chosen PostgreSQL target."
+    ],
+    "dataHandling": {
+      "fieldRules": [
+        "description, citation, and PortableAnchor.excerpt contain remediation-relevant snippets only and must respect approved maximum lengths",
+        "TaskStateOverlay.resolutionNote and TaskActionAudit delta fields must be truncated or redacted before persistence when they may contain free text",
+        "userId values in audit or export contexts must use approved internal identifiers and must not expose unnecessary profile attributes",
+        "reviewer notes and renderer-specific extensions must be excluded from broad client projections unless the caller is authorized to view them"
+      ],
+      "retention": {
+        "canonicalTaskRecords": "governed document lifecycle",
+        "syncReceiptsAndTaskActionAudits": "minimum 30 days, default purge/archive ceiling 180 days unless legal hold or approved exception applies"
+      }
+    },
+    "controlMatrix": [
+      {
+        "controlId": "SEC-MUST-001",
+        "policy": "Access Control Policy"
+      },
+      {
+        "controlId": "SEC-MUST-002",
+        "policy": "Access Control Policy"
+      },
+      {
+        "controlId": "SEC-MUST-003",
+        "policy": "Test and Development Data Handling Procedure"
+      },
+      {
+        "controlId": "SEC-MUST-004",
+        "policy": "Test and Development Data Handling Procedure"
+      },
+      {
+        "controlId": "SEC-MUST-005",
+        "policy": "Cryptography Policy"
+      },
+      {
+        "controlId": "SEC-MUST-006",
+        "policy": "System Policy"
+      },
+      {
+        "controlId": "SEC-MUST-007",
+        "policy": "Threat Modelling"
+      },
+      {
+        "controlId": "SEC-MUST-008",
+        "policy": "Development Vulnerability Management Procedure"
+      },
+      {
+        "controlId": "SEC-MUST-009",
+        "policy": "Secure Development Policy"
+      },
+      {
+        "controlId": "SEC-MUST-010",
+        "policy": "Access Control Policy"
+      },
+      {
+        "controlId": "SEC-SHOULD-001",
+        "policy": "Code Review Procedure"
+      },
+      {
+        "controlId": "SEC-SHOULD-002",
+        "policy": "Code Review Procedure"
+      },
+      {
+        "controlId": "SEC-SHOULD-003",
+        "policy": "Cryptography Policy"
+      }
+    ]
+  },
+  "observability": {
+    "required": [
+      "Sync request counts, success/failure, and deduplicated replay counts",
+      "Validation-failure reasons without prohibited raw content",
+      "Task reconciliation outcome counts",
+      "Task snapshot and status update latency/failure rates",
+      "End-to-end correlation IDs"
+    ],
+    "thresholds": [
+      {
+        "id": "NFR-OBS-001",
+        "metric": "sync_ingest_p95_latency",
+        "target": "<=5s"
+      },
+      {
+        "id": "NFR-OBS-002",
+        "metric": "canonical_task_snapshot_read_p95_latency",
+        "target": "<=2.5s"
+      },
+      {
+        "id": "NFR-OBS-003",
+        "metric": "sync_deduplication_false_positive_rate",
+        "target": "=0"
+      },
+      {
+        "id": "NFR-OBS-004",
+        "metric": "sync_success_rate_24h",
+        "target": ">=99.0%"
+      },
+      {
+        "id": "NFR-OBS-005",
+        "metric": "audit_receipt_write_success_rate_24h",
+        "target": ">=99.9%"
+      }
+    ]
+  },
+  "dataModel": {
+    "EvaluationRun": [
+      "evaluationRunId",
+      "documentId",
+      "documentVersionFingerprint",
+      "sourcePipeline",
+      "schemaVersion",
+      "startedAt",
+      "completedAt",
+      "correlationId"
+    ],
+    "ComplianceTaskRecord": [
+      "taskRecordId",
+      "logicalTaskKey",
+      "documentId",
+      "evaluationRunId",
+      "title",
+      "description",
+      "severity",
+      "status",
+      "citation",
+      "referenceSource",
+      "provenance",
+      "createdAt",
+      "updatedAt"
+    ],
+    "PortableAnchor": [
+      "anchorKind",
+      "selector",
+      "excerpt",
+      "confidence",
+      "lastValidatedAt",
+      "extensions"
+    ],
+    "TaskStateOverlay": [
+      "taskRecordId",
+      "userId",
+      "status",
+      "resolutionNote",
+      "updatedAt",
+      "source"
+    ],
+    "TaskSyncReceipt": [
+      "syncReceiptId",
+      "documentId",
+      "evaluationRunId",
+      "ingestHash",
+      "deduplicated",
+      "result",
+      "timestamp",
+      "correlationId"
+    ],
+    "TaskActionAudit": [
+      "actionId",
+      "taskRecordId",
+      "actionType",
+      "previousValue",
+      "newValue",
+      "userId",
+      "timestamp",
+      "correlationId"
+    ]
+  },
+  "integrationConstraints": [
+    "Existing backend evaluation/orchestrator output is the source for generated tasks.",
+    "Existing FS-0001 endpoints remain externally compatible and may be reimplemented over durable persistence.",
+    "The portable task schema must be reusable by both the current PDF viewer and a future BlockSuite editor.",
+    "Persistence should extend pg-naviate-agent-gateway when feasible, but the logical task contract must not be coupled to a single infrastructure assumption.",
+    "Existing Revit and Web Agent MCP server-registration data in the current gateway implementation is backed by PostgreSQL tables UserMcpServers and UserSecrets, plus DataProtectionKeys for protected secret handling; these must remain operational and isolated from FS-0002 schema evolution."
+  ],
+  "testStrategy": {
+    "unit": [
+      "Schema validation and version negotiation",
+      "Logical task-key matching and rerun reconciliation rules",
+      "Idempotency and deduplication behavior",
+      "Portable anchor serialization/deserialization"
+    ],
+    "integration": [
+      "Evaluation output to sync ingest to PostgreSQL persistence",
+      "Existing FS-0001-compatible task-read and task-update APIs over persistent storage",
+      "Existing FS-0001-compatible citation-context API over persistent storage",
+      "Existing FS-0001-compatible rerun API over persistent storage",
+      "Shared-database regression coverage proving existing Revit/Web Agent MCP registration paths remain unaffected when FS-0002 objects exist in the same PostgreSQL server",
+      "Replay submission handling and dedup receipt creation",
+      "Migration/fallback behavior from in-memory service to persistent storage"
+    ],
+    "endToEnd": [
+      "Evaluate a document, persist tasks, load tasks in an existing client, update status, rerun evaluation, and verify carried-forward state",
+      "Retrieve citation context and rerun tasks from an FS-0001-compatible client against the persistence-backed implementation",
+      "Render the same canonical task payload in the current PDF viewer and a compatibility harness representing future BlockSuite consumption"
+    ],
+    "security": [
+      "Authorization and trust-boundary enforcement for sync ingestion",
+      "Data minimization and PII redaction verification",
+      "Audit retention and privileged database-access checks",
+      "Input-size and schema-validation rejection behavior"
+    ]
+  },
+  "contractsToProduce": [
+    "OpenAPI for sync ingest, canonical task snapshot read, task status/state overlay update, and rerun reconciliation",
+    "JSON schema for the portable canonical task payload with extension points for PDF viewer and future BlockSuite editor",
+    "Error model and retry/idempotency guidance",
+    "Persistence model documentation covering task identity, evaluation-run linkage, and reconciliation rules",
+    "Draft security review notes covering authorization model, field-level privacy handling, and PostgreSQL target suitability before API-affecting implementation begins",
+    "Shared-database compatibility notes documenting existing MCP registration dependencies, the non-breaking isolation strategy, and rollback checks if pg-naviate-agent-gateway is reused"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-001",
+      "given": "an evaluation run completes through the existing backend/orchestrator flow",
+      "when": "the sync contract is invoked with a valid portable task payload",
+      "then": "the evaluation run, sync receipt, and canonical task records are persisted and become available through compatible task-read APIs"
+    },
+    {
+      "id": "AC-002",
+      "given": "a previously processed evaluation run for the same document",
+      "when": "the identical sync payload is submitted again",
+      "then": "the system records a deduplicated sync receipt and does not create duplicate active task records"
+    },
+    {
+      "id": "AC-003",
+      "given": "a reviewer has updated task statuses for a document",
+      "when": "a later evaluation rerun produces matching or equivalent tasks",
+      "then": "compatible user-managed state is carried forward according to documented reconciliation rules"
+    },
+    {
+      "id": "AC-004",
+      "given": "an FS-0001-compatible client requests tasks or updates task status",
+      "when": "the persistence-backed implementation is active",
+      "then": "the client continues to function without a breaking contract change"
+    },
+    {
+      "id": "AC-005",
+      "given": "the canonical task payload for a document",
+      "when": "the current PDF viewer and a future BlockSuite editor or approved compatibility harness consume the payload",
+      "then": "both resolve the same task meaning from canonical fields while using optional surface-specific extensions only where needed"
+    },
+    {
+      "id": "AC-006",
+      "given": "a sync payload is malformed or uses an unsupported schema version",
+      "when": "the sync endpoint validates the payload",
+      "then": "the request fails with actionable errors and no partial task persistence occurs"
+    },
+    {
+      "id": "AC-007",
+      "given": "sync, reconciliation, and user task actions occur",
+      "when": "operators inspect logs and audit records",
+      "then": "correlation IDs, sync receipts, and task-action audit data allow end-to-end tracing"
+    },
+    {
+      "id": "AC-008",
+      "given": "an FS-0001-compatible client requests citation/reference context for a persisted task",
+      "when": "the persistence-backed implementation is active",
+      "then": "the client receives a compatible citation-context response without a breaking contract change"
+    },
+    {
+      "id": "AC-009",
+      "given": "an FS-0001-compatible client invokes manual rerun for a document with persisted tasks",
+      "when": "the persistence-backed implementation is active",
+      "then": "the rerun completes through compatible request/response semantics and returns refreshed task state without a breaking contract change"
+    },
+    {
+      "id": "AC-010",
+      "given": "pg-naviate-agent-gateway is already used by Revit and Web Agent MCP server-registration flows backed by UserMcpServers, UserSecrets, and DataProtectionKeys",
+      "when": "FS-0002 persistence is introduced into that same database",
+      "then": "existing registration reads and writes continue to succeed unchanged, and FS-0002 objects remain isolated to approved schema and role boundaries"
+    }
+  ],
+  "rollout": {
+    "strategy": "additive-backward-compatible",
+    "migration": "phase_from_in_memory_to_persistent_storage",
+    "fallback": "retain_current_behavior_if_persistence_sync_fails",
+    "environmentRequirements": [
+      "production task persistence must be segregated from lower environments",
+      "approved PostgreSQL target must document networking, backup/restore, access-role boundaries, and environment ownership before go-live",
+      "reuse of pg-naviate-agent-gateway requires an explicit suitability checklist covering tenancy, lifecycle ownership, capacity, backup posture, and governance approval",
+      "the suitability checklist must include compatibility with existing Revit/Web Agent MCP registration workloads, including schema isolation, role isolation, migration rollback, and regression verification of the current UserMcpServers/UserSecrets/DataProtectionKeys paths and ShareWithRevit behavior"
+    ],
+    "compatibility": [
+      "FS-0001 task APIs",
+      "current PDF viewer",
+      "future BlockSuite editor via extension mappings"
+    ]
+  },
+  "openQuestions": [
+    "Can pg-naviate-agent-gateway host the new schema and workload without governance or lifecycle conflicts?",
+    "What stable logical task-key strategy should be used for cross-run matching?",
+    "Should reconciliation markers such as superseded remain internal-only or become externally visible diagnostics?",
+    "What extension namespace convention should be used for editor-specific enrichments?",
+    "Does pg-naviate-agent-gateway currently host any additional Revit/Web Agent MCP registration tables beyond UserMcpServers, UserSecrets, and DataProtectionKeys, and what exact non-breaking coexistence plan is required if reuse proceeds?"
+  ],
+  "assumptions": [
+    "Existing backend evaluation/orchestrator output can be mapped into the portable task schema without a prompt redesign.",
+    "FS-0001 remains the current consumer contract baseline and must not be broken by FS-0002.",
+    "BlockSuite compatibility is a schema portability target, not a system-of-record requirement."
+  ],
+  "references": [
+    "docs/specs/FS-0001-word-compliance-agent-tasks/FeatureSpec.md",
+    "docs/contracts/word-compliance/task-output.schema.json",
+    "docs/agent-prompts/document-compliance-checker.md",
+    "docs/agent-prompts/standard-compliance-checker.md",
+    "docs/artifacts/azure-resource-inventory-2026-02-23_180442.json",
+    "docs/security-reports/2026-03-06-foundry-agent-webapp.md",
+    "docs/specs/FS-0002-evaluation-task-sync-and-portable-task-schema/DbCoexistenceChecklist.md",
+    "c:\\Users\\nickar\\source\\repos\\naviate-revit-ai-agent\\NaviateGateway\\Program.cs",
+    "c:\\Users\\nickar\\source\\repos\\naviate-revit-ai-agent\\NaviateGateway\\Services\\UserMcpServerStore.cs",
+    "c:\\Users\\nickar\\source\\repos\\naviate-revit-ai-agent\\NaviateGateway\\Data\\GatewayDbContext.cs",
+    "c:\\Users\\nickar\\source\\repos\\naviate-revit-ai-agent\\NaviateGateway\\Data\\Migrations\\20260108125511_InitialGatewayDb.cs",
+    "c:\\Users\\nickar\\source\\repos\\naviate-revit-ai-agent\\NaviateGateway\\Data\\Migrations\\20260108160658_AddUserSecrets.cs",
+    "c:\\Users\\nickar\\source\\repos\\naviate-revit-ai-agent\\NaviateGateway\\Data\\Migrations\\20260109170315_AddShareWithRevitToUserMcpServers.cs"
+  ]
+}

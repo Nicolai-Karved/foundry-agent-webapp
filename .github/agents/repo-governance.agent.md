@@ -4,7 +4,7 @@ description: "Enforces architecture, coding standards, diagnostics, and workflow
 argument-hint: "Enforce repo architecture and coding standards."
 user-invocable: true
 target: vscode
-model: "GPT-5.3-Codex"
+model: "GPT-5.4"
 # model: ""
 # tools:
 #   - <tool-id>

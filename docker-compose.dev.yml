@@ -1,6 +1,23 @@
 name: foundry-agent-webapp-dev
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: foundry-agent-postgres-dev
+    environment:
+      POSTGRES_DB: ${FS0002_LOCAL_POSTGRES_DB:-foundry_agent_fs0002}
+      POSTGRES_USER: ${FS0002_LOCAL_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${FS0002_LOCAL_POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - fs0002-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FS0002_LOCAL_POSTGRES_USER:-postgres} -d ${FS0002_LOCAL_POSTGRES_DB:-foundry_agent_fs0002}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   backend:
     build:
       context: .
@@ -13,6 +30,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://0.0.0.0:8089
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
+      EvaluationTaskSync__Enabled: "true"
+      EvaluationTaskSync__Persistence__AutoMigrateOnStartup: "true"
+      FS0002_TASK_PERSISTENCE_CONNECTION_STRING: Host=postgres;Port=5432;Database=${FS0002_LOCAL_POSTGRES_DB:-foundry_agent_fs0002};Username=${FS0002_LOCAL_POSTGRES_USER:-postgres};Password=${FS0002_LOCAL_POSTGRES_PASSWORD:-postgres};SSL Mode=Disable;Include Error Detail=true
       AI_AGENT_ENDPOINT: ${AZURE_EXISTING_AIPROJECT_ENDPOINT:-https://aif-naviate-agent-dev.services.ai.azure.com/api/projects/projaif-naviate-agent-dev}
       AI_AGENT_ID: ${AI_AGENT_ID:-generic-bim}
       AI_AGENT_ID_STANDARD_COMPLIANCE: ${AI_AGENT_ID_STANDARD_COMPLIANCE:-standard-compliance-checker}
@@ -21,6 +41,9 @@ services:
       AI_AGENT_ID_AIR: ${AI_AGENT_ID_AIR:-air-compliance-checker}
       AI_AGENT_ID_EIR: ${AI_AGENT_ID_EIR:-eir-compliance-checker}
       AI_AGENT_ID_BEP: ${AI_AGENT_ID_BEP:-bep-compliance-checker}
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8089:8089"
     volumes:
@@ -48,5 +71,6 @@ services:
       - frontend-node-modules:/app/frontend/node_modules
 
 volumes:
+  fs0002-postgres-data:
   nuget-packages:
   frontend-node-modules:

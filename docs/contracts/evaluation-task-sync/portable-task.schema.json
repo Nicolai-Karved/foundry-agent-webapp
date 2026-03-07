@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foundry-agent-webapp.local/schemas/fs-0002/portable-task.schema.json",
+  "title": "FS-0002 Portable Evaluation Task Payload",
+  "description": "Draft canonical contract for synchronizing durable evaluation-task results into persistence while preserving renderer-neutral task meaning.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "documentId",
+    "documentVersionFingerprint",
+    "evaluationRun",
+    "tasks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "fs-0002/v1"
+    },
+    "documentId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "documentVersionFingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "producer": {
+      "$ref": "#/$defs/producer"
+    },
+    "evaluationRun": {
+      "$ref": "#/$defs/evaluationRun"
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 250,
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "in_review",
+        "done",
+        "skipped",
+        "blocked",
+        "superseded",
+        "reopened",
+        "carried_forward"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "object"
+      },
+      "description": "Renderer- or client-specific extension payloads keyed by approved namespace, for example pdf or blocksuite."
+    },
+    "producer": {
+      "type": "object",
+      "required": ["sourcePipeline"],
+      "properties": {
+        "sourcePipeline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "serviceVersion": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "tenantId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false
+    },
+    "evaluationRun": {
+      "type": "object",
+      "required": [
+        "evaluationRunId",
+        "startedAt",
+        "completedAt",
+        "correlationId"
+      ],
+      "properties": {
+        "evaluationRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["sourcePipeline"],
+      "properties": {
+        "sourcePipeline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "standardId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "clauseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "policyId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "generatedAt": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "additionalProperties": false
+    },
+    "citation": {
+      "type": "object",
+      "required": ["text", "referenceSource"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "referenceSource": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "uri": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "additionalProperties": false
+    },
+    "portableAnchor": {
+      "type": "object",
+      "required": [
+        "anchorKind",
+        "selector",
+        "excerpt",
+        "confidence",
+        "lastValidatedAt"
+      ],
+      "properties": {
+        "anchorKind": {
+          "type": "string",
+          "enum": [
+            "contentControlTag",
+            "textSearchFallback",
+            "pageRegion",
+            "semanticRange"
+          ]
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "excerpt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lastValidatedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "taskId",
+        "logicalTaskKey",
+        "title",
+        "description",
+        "severity",
+        "status",
+        "citation",
+        "anchor",
+        "provenance"
+      ],
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "logicalTaskKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "citation": {
+          "$ref": "#/$defs/citation"
+        },
+        "anchor": {
+          "$ref": "#/$defs/portableAnchor"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,387 @@
+openapi: 3.1.0
+info:
+  title: FS-0002 Evaluation Task Sync API
+  version: 0.1.0-draft
+  summary: Draft contract for durable task sync, canonical snapshot reads, overlay updates, and rerun reconciliation.
+  description: |
+    Draft FS-0002 contract package. This contract is review-gated and does not by itself imply the endpoints are implemented.
+
+    Existing FS-0001-compatible endpoints remain part of the compatibility surface and must continue to work while the
+    persistence-backed implementation is introduced.
+servers:
+  - url: https://localhost:7134
+    description: Local ASP.NET Core backend
+security:
+  - bearerAuth: []
+tags:
+  - name: TaskSync
+  - name: TaskSnapshots
+  - name: TaskOverlay
+  - name: Verification
+paths:
+  /api/task-sync/ingest:
+    post:
+      tags: [TaskSync]
+      summary: Ingest a versioned portable task payload for durable persistence
+      description: |
+        Accepts canonical task output from the evaluation/orchestrator pipeline.
+
+        Draft contract rules:
+        - `schemaVersion` must be `fs-0002/v1`
+        - request bodies larger than 1 MiB must be rejected
+        - duplicate submissions for the same document and evaluation run must be handled idempotently
+      operationId: ingestEvaluationTasks
+      parameters:
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './portable-task.schema.json'
+            examples:
+              validSyncPayload:
+                summary: Valid sync request
+                externalValue: ./examples/valid-sync-payload.json
+      responses:
+        '202':
+          description: Sync request accepted for durable processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSyncReceipt'
+        '400':
+          description: Malformed request or validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Missing or invalid backend identity
+        '403':
+          description: Caller is authenticated but not allowed to submit sync payloads
+        '409':
+          description: Conflicting evaluation run state prevents acceptance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '413':
+          description: Request body exceeds payload size limit
+        '422':
+          description: Unsupported schema version or semantically invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/task-snapshots/{documentId}:
+    get:
+      tags: [TaskSnapshots]
+      summary: Read the canonical task snapshot for a document
+      operationId: getTaskSnapshot
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: includeSuperseded
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Canonical task snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSnapshotResponse'
+        '401':
+          description: Missing or invalid user identity
+        '403':
+          description: Caller is not authorized for the document scope
+        '404':
+          description: Document or task snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/tasks/{taskId}/overlay:
+    patch:
+      tags: [TaskOverlay]
+      summary: Update user-managed task state without mutating generated task facts
+      operationId: updateTaskOverlay
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskOverlayUpdateRequest'
+      responses:
+        '200':
+          description: Updated overlay and projected task view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskOverlayUpdateResponse'
+        '400':
+          description: Invalid overlay request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Missing or invalid user identity
+        '403':
+          description: Caller is not authorized for the task/document scope
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Optimistic concurrency/version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/verification/rerun:
+    post:
+      tags: [Verification]
+      summary: Trigger rerun reconciliation for a document
+      description: |
+        Draft reconciliation contract. Existing FS-0001-compatible request and response semantics remain the compatibility baseline.
+      operationId: rerunVerification
+      parameters:
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerunVerificationRequest'
+      responses:
+        '202':
+          description: Rerun accepted for asynchronous reconciliation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RerunVerificationResponse'
+        '400':
+          description: Invalid rerun request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Missing or invalid user identity
+        '403':
+          description: Caller is not authorized for the document scope
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ProblemDetails:
+      type: object
+      required: [title, status]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+      additionalProperties: true
+    TaskSyncReceipt:
+      type: object
+      required:
+        - syncReceiptId
+        - documentId
+        - evaluationRunId
+        - deduplicated
+        - result
+        - correlationId
+        - acceptedAt
+      properties:
+        syncReceiptId:
+          type: string
+        documentId:
+          type: string
+        evaluationRunId:
+          type: string
+        deduplicated:
+          type: boolean
+        result:
+          type: string
+          enum: [accepted, deduplicated, rejected]
+        correlationId:
+          type: string
+        acceptedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    TaskProjection:
+      type: object
+      required:
+        - taskId
+        - logicalTaskKey
+        - title
+        - description
+        - severity
+        - status
+        - citation
+        - referenceSource
+      properties:
+        taskId:
+          type: string
+        logicalTaskKey:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        status:
+          type: string
+          enum: [open, in_review, done, skipped, blocked, superseded, reopened, carried_forward]
+        citation:
+          type: string
+        referenceSource:
+          type: string
+        excerpt:
+          type: string
+        extensions:
+          type: object
+          additionalProperties:
+            type: object
+      additionalProperties: false
+    TaskSnapshotResponse:
+      type: object
+      required:
+        - documentId
+        - schemaVersion
+        - evaluationRunId
+        - tasks
+      properties:
+        documentId:
+          type: string
+        schemaVersion:
+          type: string
+          const: fs-0002/v1
+        evaluationRunId:
+          type: string
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskProjection'
+      additionalProperties: false
+    TaskOverlayUpdateRequest:
+      type: object
+      required: [documentId, status, expectedVersion]
+      properties:
+        documentId:
+          type: string
+        status:
+          type: string
+          enum: [open, in_review, done, skipped, blocked]
+        resolutionNote:
+          type: string
+          maxLength: 2000
+        expectedVersion:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+    TaskOverlayUpdateResponse:
+      type: object
+      required: [taskId, documentId, status, version, updatedAt]
+      properties:
+        taskId:
+          type: string
+        documentId:
+          type: string
+        status:
+          type: string
+          enum: [open, in_review, done, skipped, blocked]
+        resolutionNote:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    RerunVerificationRequest:
+      type: object
+      required: [documentId]
+      properties:
+        documentId:
+          type: string
+        snippet:
+          type: string
+          maxLength: 4000
+        standardIds:
+          type: array
+          maxItems: 25
+          items:
+            type: string
+      additionalProperties: false
+    RerunVerificationResponse:
+      type: object
+      required: [documentId, accepted, correlationId]
+      properties:
+        documentId:
+          type: string
+        accepted:
+          type: boolean
+        correlationId:
+          type: string
+        message:
+          type: string
+      additionalProperties: false
